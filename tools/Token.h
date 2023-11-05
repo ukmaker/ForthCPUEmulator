@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "../runtime/ForthCPU/ForthIS.h"
+#include "Opcodes.h"
 
 #define TOKEN_TYPE_OPCODE 0
 #define TOKEN_TYPE_LABEL 1
@@ -90,12 +91,14 @@ class Token {
     const char *strB = NULL;
 
     // For an instruction, a string or a directive
-    uint8_t opcode = 0;
+    Opcode *opcode;
+    uint8_t directive = 0;
     uint8_t arga = 0;
     uint8_t argb = 0;
     uint8_t condition = 0;
     uint8_t apply = 0;
     uint8_t invert = 0;
+    uint8_t U5 = 0;
 
     // Instructions with immediate values may need to
     // have the value resolved
@@ -151,58 +154,58 @@ class Token {
     }
 
     bool isOrg() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_ORG);
+        return isDirective() && (directive == DIRECTIVE_TYPE_ORG);
     }
 
     bool isData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_DATA);
+        return isDirective() && (directive == DIRECTIVE_TYPE_DATA);
     }
 
     bool isStringData() {
         return isDirective() && (
-            (opcode == DIRECTIVE_TYPE_PLAIN_STRING)
-            || (opcode == DIRECTIVE_TYPE_NWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_RWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_IWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_XWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_CWORD_STRING)
+            (directive == DIRECTIVE_TYPE_PLAIN_STRING)
+            || (directive == DIRECTIVE_TYPE_NWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_RWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_IWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_XWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_CWORD_STRING)
         );
     }
 
     bool isHeader() {
-            return (opcode == DIRECTIVE_TYPE_NWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_RWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_IWORD_STRING)
-            || (opcode == DIRECTIVE_TYPE_XWORD_STRING)      
-            || (opcode == DIRECTIVE_TYPE_CWORD_STRING);      
+            return (directive == DIRECTIVE_TYPE_NWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_RWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_IWORD_STRING)
+            || (directive == DIRECTIVE_TYPE_XWORD_STRING)      
+            || (directive == DIRECTIVE_TYPE_CWORD_STRING);      
     }
 
     bool isPStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_PLAIN_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_PLAIN_STRING);
     }
 
     bool isNStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_NWORD_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_NWORD_STRING);
     }
 
     bool isRStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_RWORD_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_RWORD_STRING);
     }
 
     bool isIStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_IWORD_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_IWORD_STRING);
     }
 
     bool isXStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_XWORD_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_XWORD_STRING);
     }
 
     bool isCStringData() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_CWORD_STRING);
+        return isDirective() && (directive == DIRECTIVE_TYPE_CWORD_STRING);
     }
 
     bool isAlias() {
-        return isDirective() && (opcode == DIRECTIVE_TYPE_ALIAS);
+        return isDirective() && (directive == DIRECTIVE_TYPE_ALIAS);
     }
 
     bool isLocation() {
@@ -226,13 +229,7 @@ class Token {
     }
 
     uint16_t opWord() {
-        uint16_t w = opcode << OP_BITS;
-        w |= (condition & 3) << CC_BITS;
-        w |= ((condition & 8) >> 3) << CC_APPLY_BIT;
-        w |= ((condition & 4) >> 2) << CC_INV_BIT;
-        w |= (arga & 0x0f) << 4;
-        w |= argb & 0x0f;
-        return w;
+        return opcode->getCode();
     }
 
     uint8_t lowByte() {

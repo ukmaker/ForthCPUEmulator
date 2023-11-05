@@ -347,21 +347,8 @@ public:
                     label = NULL;//nextLabel();
                 }
                 addr += 2;
-                switch (tok->opcode)
-                {
-                case OP_MOVIL:
-                case OP_STIL:
-                case OP_ADDIL:
-                case OP_SUBIL:
-                case OP_CMPIL:
-                case OP_JP:
-                case OP_JXL:
-                case OP_CALL:
-                case OP_CALLXL:
+                if(tok->opcode->isImmediate()) {
                     addr += 2;
-                    break;
-                default:
-                    break;
                 }
             }
             // Resolve symbols on the next pass
@@ -499,7 +486,7 @@ public:
     uint16_t headerWord(Token *tok) {
         int r = (1 << HEADER_HEADER_BIT);
         if(tok->isHeader()) {
-            switch(tok->opcode) {
+            switch(tok->directive) {
                 case DIRECTIVE_TYPE_NWORD_STRING:
                     r |= tok->strlen() | (HEADER_SCOPE_NORMAL << HEADER_SCOPE_BITS);
                     break;
@@ -541,7 +528,7 @@ public:
             {
 
             case TOKEN_TYPE_DIRECTIVE:
-                switch (tok->opcode)
+                switch (tok->directive)
                 {
                 case DIRECTIVE_TYPE_DATA:
                     printf("%04x %02x %02x\n", tok->address, (tok->value & 0xff00) >> 8, tok->value & 0xff);
@@ -616,21 +603,8 @@ public:
             case TOKEN_TYPE_OPCODE:
             {
                 printf("%04x %02x %02x\n", tok->address, tok->highByte(), tok->lowByte());
-                switch (tok->opcode)
-                {
-                case OP_MOVIL:
-                case OP_STIL:
-                case OP_ADDIL:
-                case OP_SUBIL:
-                case OP_CMPIL:
-                case OP_JP:
-                case OP_JXL:
-                case OP_CALL:
-                case OP_CALLXL:
+                if(tok->opcode->isImmediate()) {
                     printf("%04x %02x %02x\n", tok->address + 2, tok->value & 0xff, (tok->value & 0xff00) >> 8);
-                    break;
-                default:
-                    break;
                 }
             }
             break;
@@ -656,7 +630,7 @@ public:
             {
 
             case TOKEN_TYPE_DIRECTIVE:
-                switch (tok->opcode)
+                switch (tok->directive)
                 {
                 case DIRECTIVE_TYPE_DATA:
                     ram->put(tok->address, tok->value);
@@ -722,21 +696,8 @@ public:
             {
                 ram->putC(tok->address + 1, tok->highByte());
                 ram->putC(tok->address, tok->lowByte());
-                switch (tok->opcode)
-                {
-                case OP_MOVIL:
-                case OP_STIL:
-                case OP_ADDIL:
-                case OP_SUBIL:
-                case OP_CMPIL:
-                case OP_JP:
-                case OP_JXL:
-                case OP_CALL:
-                case OP_CALLXL:
+                if(tok->opcode->isImmediate()) {
                     ram->put(tok->address + 2, tok->value);
-                    break;
-                default:
-                    break;
                 }
             }
             break;
@@ -785,27 +746,8 @@ public:
         }
         else
         {
+            if(tok->opcode->expectsU4()) {
 
-            switch (tok->opcode)
-            {
-
-            case OP_MOVI:
-            case OP_STI:
-            case OP_ADDI:
-            case OP_SUBI:
-            case OP_CMPI:
-            case OP_SLI:
-            case OP_SRI:
-            case OP_RLI:
-            case OP_RRI:
-            case OP_RLCI:
-            case OP_RRCI:
-            case OP_BITI:
-            case OP_SETI:
-            case OP_CLRI:
-            case OP_STI_B:
-            case OP_JX:
-            case OP_CALLX:
                 // register in arga 4-bit tiny immediates in value
                 sym = getSymbol(tok->str);
                 if (sym->token == NULL)
@@ -813,8 +755,8 @@ public:
                     printf("ERROR: unknown symbol %s at line %d \n", tok->str, tok->line);
                     return false;
                 }
-                    switch (sym->token->type)
-                    {
+                switch (sym->token->type)
+                {
                     case TOKEN_TYPE_CONST:
                         tok->value = sym->token->value;
                         break;
@@ -825,39 +767,20 @@ public:
                         break;
                     default:
                         break;
-                    }
-                if (tok->opcode == OP_SUBI)
-                {
-                    tok->arga = tok->value;
-                }
-                else
-                {
-                    tok->argb = tok->value;
                 }
 
-                    if (tok->value > 7 || tok->value < -8)
-                    {
-                        printf("ERROR: tiny value exceeded (%d) at line %d \n", tok->value, tok->line);
-                        return false;
-                    }
+                if (tok->value > 15 || tok->value < 0)
+                {
+                    printf("ERROR: tiny value exceeded (%d) at line %d \n", tok->value, tok->line);
+                    return false;
+                }
 
-                    tok->symbolic = false;                    
-                break;
+                tok->opcode->setArgB(tok->value);
+                tok->symbolic = false;                    
 
-            // Defined register, 8-bit immediate
-            case OP_MOVAI:
-            case OP_MOVBI:
-            case OP_STAI:
-            case OP_STBI:
-            case OP_STAI_B:
-            case OP_STBI_B:
-            case OP_ADDAI:
-            case OP_ADDBI:
-            case OP_CMPAI:
-            case OP_CMPBI:
-            case OP_SUBAI:
-            case OP_SUBBI:
-            case OP_SYSCALL:
+            } else if(tok->opcode->expectsU8() || tok->opcode->expectsU8()) {
+
+                // RA, 8-bit immediate
                 sym = getSymbol(tok->str);
                 if (sym->token == NULL)
                 {
@@ -866,51 +789,43 @@ public:
                 }
                 tok->value = sym->token->value;
 
-                if (tok->value > 127 || tok->value < -128)
+                if(tok->opcode->expectsU8() && (tok->value > 127 || tok->value < -128))
                 {
-                    printf("ERROR: byte value exceeded (%d) at line %d \n", tok->value, tok->line);
+                    printf("ERROR: signed byte value exceeded (%d) at line %d \n", tok->value, tok->line);
+                    return false;
+                } else if(tok->value > 255 || tok->value < -0) {
+                    printf("ERROR: unsigned byte value exceeded (%d) at line %d \n", tok->value, tok->line);
                     return false;
                 }
 
-                tok->arga = (tok->value & (0xf << 4)) >> 4;
-                tok->argb = tok->value & 0xf;
+                tok->opcode->setArgA((tok->value & (0xf << 4)) >> 4);
+                tok->opcode->setArgA(tok->value);
                 tok->symbolic = false;
-                break;
-
-            case OP_JR:
-            case OP_CALLR:
+            } else if(tok->opcode->expectsU5()) {
+                // 5-bit immediate
                 sym = getSymbol(tok->str);
                 if (sym->token == NULL)
                 {
                     printf("ERROR: unknown symbol %s at line %d \n", tok->str, tok->line);
                     return false;
                 }
-                tok->value = (sym->token->address - tok->address - 2) >> 1;
 
-                if (tok->value > 32767 || tok->value < -32768)
+                tok->value = sym->token->value;
+
+                if((tok->value > 31 || tok->value < 0))
                 {
-                    printf("ERROR: long value exceeded (%d) at line %d \n", tok->value, tok->line);
+                    printf("ERROR: U5 value exceeded (%d) at line %d \n", tok->value, tok->line);
                     return false;
                 }
-                tok->arga = (tok->value & (0xf << 4)) >> 4;
-                tok->argb = tok->value & 0xf;
+                tok->opcode->setU5(tok->value);
                 tok->symbolic = false;
-                break;
-
-            // arga and long immediates in the following word
-            case OP_MOVIL:
-            case OP_STIL:
-            case OP_ADDIL:
-            case OP_SUBIL:
-            case OP_CMPIL:
-            case OP_JP:
-            case OP_CALL:
+            } else if(tok->opcode->expectsU16()) {
                 sym = getSymbol(tok->str);
                 if (sym->token == NULL)
-                    {
+                {
                     printf("ERROR: unknown symbol %s at line %d \n", tok->str, tok->line);
-                            return false;
-                        }
+                    return false;
+                }
                 if (sym->token->isLabel() || sym->token->isVar() || sym->token->isStr())
                 {
                     tok->value = sym->token->address;
@@ -925,10 +840,6 @@ public:
                     }
                 }
                 tok->symbolic = false;
-                break;
-
-            default:
-                break;
             }
         }
 
@@ -1240,16 +1151,16 @@ public:
             inc();
         }
 
-        int dir = vocab.findDirective(source, here, idx - here);
-        if (dir == -1)
+        int directive = vocab.findDirective(source, here, idx - here);
+        if (directive == -1)
         {
             return Token::error(line, pos, DIRECTIVE_EXPECTED);
         }
 
         Token *tok = new Token(NULL, line, p);
         tok->type = TOKEN_TYPE_DIRECTIVE;
-        tok->opcode = dir;
-        switch (tok->opcode)
+        tok->directive = directive;
+        switch (tok->directive)
         {
         case DIRECTIVE_TYPE_DATA:
         case DIRECTIVE_TYPE_ORG:
@@ -1307,8 +1218,8 @@ public:
             inc();
         }
 
-        int opcode = vocab.findOpcode(source, here, idx - here);
-        if (opcode == -1)
+        Opcode *opcode = vocab.findOpcode(source, here, idx - here);
+        if (opcode == NULL)
         {
             return Token::error(line, pos, OPCODE_EXPECTED);
         }
@@ -1330,259 +1241,78 @@ public:
         {
             tok->condition = condition;
         }
-        switch (opcode)
-        {
 
-        case OP_ADD:
-            instructionRR(tok);
-            break;
-        case OP_ADDAI:
-            instructionI8(tok);
-            break;
-        case OP_ADDBI:
-            instructionI8(tok);
-            break;
-        case OP_ADDI:
-            instructionRI4(tok);
-            break;
-        case OP_ADDIL:
-            instructionRI(tok);
-            break;
-        case OP_AND:
-            instructionRR(tok);
-            break;
-        case OP_BITI:
-            instructionRUI4(tok);
-            break;
-        case OP_BIT:
-            instructionRR(tok);
-            break;
-        case OP_BRK:
-            break;
-        case OP_CALL:
-            getImm(tok);
-            break;
-        case OP_CALLR:
-            getImm8(tok);
-            break;
-        case OP_CALLX:
-            instructionRI4(tok);
-            break;
-        case OP_CALLXL:
-            instructionRI4(tok);
-            break;
-        case OP_CLR:
-            instructionRR(tok);
-            break;
-        case OP_CLRI:
-            instructionRUI4(tok);
-            break;
-        case OP_CMP:
-            instructionRR(tok);
-            break;
-        case OP_CMPAI:
-            instructionI8(tok);
-            break;
-        case OP_CMPBI:
-            instructionI8(tok);
-            break;
-        case OP_CMPI:
-            instructionRI4(tok);
-            break;
-        case OP_CMPIL:
-            instructionRI(tok);
-            break;
-        case OP_DIV:
-            instructionRR(tok);
-            break;
-        case OP_HALT:
-            break;
-        case OP_JP:
-            getImm(tok);
-            break;
-        case OP_JR:
-            instructionI8(tok);
-            break;
-        case OP_JX:
-            instructionRI4(tok);
-            break;
-        case OP_JXL:
-            instructionRI(tok);
-            break;
-        case OP_LD:
-            instructionRR(tok);
-            break;
-        case OP_LDAX:
-            instructionRI4(tok);
-            break;
-        case OP_LDBX:
-            instructionRI4(tok);
-            break;
-        case OP_LDAX_B:
-            instructionRI4(tok);
-            break;
-        case OP_LDBX_B:
-            instructionRI4(tok);
-            break;
-        case OP_LD_B:
-            instructionRR(tok);
-            break;
-        case OP_MOV:
-            instructionRR(tok);
-            break;
-        case OP_MOVAI:
-            instructionI8(tok);
-            break;
-        case OP_MOVBI:
-            instructionI8(tok);
-            break;
-        case OP_MOVI:
-            instructionRI4(tok);
-            break;
-        case OP_MOVIL:
-            instructionRI(tok);
-            break;
-        case OP_MUL:
-            instructionRR(tok);
-            break;
-        case OP_NOP:
-            break;
-        case OP_NOT:
-            instructionRR(tok);
-            break;
-        case OP_OR:
-            instructionRR(tok);
-            break;
-        case OP_POPD:
-            getArgA(tok);
-            break;
-        case OP_POPR:
-            getArgA(tok);
-            break;
-        case OP_PUSHD:
-            getArgA(tok);
-            break;
-        case OP_PUSHR:
-            getArgA(tok);
-            break;
-        case OP_RET:
-            break;
+        if(tok->opcode->isALU()) {
+            switch(tok->opcode->getALUMode()) {
 
-        case OP_RL:
-            instructionRR(tok);
-            break;
-        case OP_RLC:
-            instructionRR(tok);
-            break;
-        case OP_RR:
-            instructionRR(tok);
-            break;
-        case OP_RRC:
-            instructionRR(tok);
-            break;
-        case OP_SET:
-            instructionRR(tok);
-            break;
-        case OP_SL:
-            instructionRR(tok);
-            break;
-        case OP_SR:
-            instructionRR(tok);
-            break;
+                case ALU_MODE_REG_REG:
+                    instructionRR(tok);
+                break;
 
-        case OP_RLI:
-            instructionRUI4(tok);
-            break;
-        case OP_RLCI:
-            instructionRUI4(tok);
-            break;
-        case OP_RRI:
-            instructionRUI4(tok);
-            break;
-        case OP_RRCI:
-            instructionRUI4(tok);
-            break;
-        case OP_SETI:
-            instructionRUI4(tok);
-            break;
-        case OP_SLI:
-            instructionRUI4(tok);
-            break;
-        case OP_SRI:
-            instructionRUI4(tok);
-            break;
+                case ALU_MODE_REG_U4:
+                    instructionRU4(tok);
+                break;
 
-        case OP_ST:
-            instructionRR(tok);
-            break;
-        case OP_ST_B:
-            instructionRR(tok);
-            break;
-        case OP_STAI:
-            instructionI8(tok);
-            break;
-        case OP_STAI_B:
-            instructionI8(tok);
-            break;
-        case OP_STBI:
-            instructionI8(tok);
-            break;
-        case OP_STBI_B:
-            instructionI8(tok);
-            break;
-        case OP_STI:
-            instructionRI4(tok);
-            break;
-        case OP_STI_B:
-            instructionRI4(tok);
-            break;
-        case OP_STIL:
-            instructionRI(tok);
-            break;
-        case OP_STXA:
-            instructionRI4(tok);
-            break;
-        case OP_STXA_B:
-            instructionRI4(tok);
-            break;
-        case OP_STXB:
-            instructionRI4(tok);
-            break;
-        case OP_STXB_B:
-            instructionRI4(tok);
-            break;
-        case OP_SUB:
-            instructionRR(tok);
-            break;
-        case OP_SUBAI:
-            instructionI8(tok);
-            break;
-        case OP_SUBBI:
-            instructionI8(tok);
-            break;
-        case OP_SUBI:
-            instructionRI4(tok);
-            break;
-        case OP_SUBIL:
-            instructionRI(tok);
-            break;
-        case OP_SYSCALL:
-            getUImm8(tok);
-            break;
-        case OP_XOR:
-            instructionRR(tok);
-            break;
+                case ALU_MODE_REGA_U8:
+                    instructionU8(tok);
+                 break;
+            
+                default: // ALU_MODE_REGA_S8
+                    instructionS8(tok);
+                break;
+            }
 
-        default:
-            tok->type = TOKEN_TYPE_ERROR;
-            tok->str = OPCODE_EXPECTED;
+        } else if(tok->opcode->isLDS()) {
+            switch(tok->opcode->getLDSMode()) {
+                case LDS_MODE_REG_REG:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_HERE:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_REG_INC:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_REG_DEC:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_RL:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_FP:
+                    instructionRR(tok);
+                break;
+
+                case LDS_MODE_REG_SP:
+                    instructionRR(tok);
+                break;
+
+                default: // LDS_MODE_REG_RS:
+                    instructionRR(tok);
+                break;
+            }
+
+        } else if(tok->opcode->isJMP()) {
+
+        } else {
+
         }
         return tok;
     }
 
-    void instructionR(Token *tok)
+    void instructionRa(Token *tok)
     {
         getArgA(tok);
+    }
+
+    void instructionRb(Token *tok)
+    {
+        getArgB(tok);
     }
 
     void instructionRR(Token *tok)
@@ -1590,17 +1320,17 @@ public:
         getArgA(tok) & comma(tok) & getArgB(tok);
     }
 
-    void instructionI8(Token *tok)
+    void instructionU8(Token *tok)
+    {
+        getUImm8(tok);
+    }
+
+    void instructionS8(Token *tok)
     {
         getImm8(tok);
     }
 
-    void instructionRI4(Token *tok)
-    {
-        getArgA(tok) & comma(tok) & getImm4(tok);
-    }
-
-    void instructionRUI4(Token *tok)
+    void instructionRU4(Token *tok)
     {
         getArgA(tok) & comma(tok) & getUImm4(tok);
     }
@@ -1627,16 +1357,16 @@ public:
         switch (source[idx])
         {
         case 'C':
-            cc += COND_C;
+            cc += JMP_CC_C;
             break;
         case 'Z':
-            cc += COND_Z;
+            cc += JMP_CC_Z;
             break;
         case 'M':
-            cc += COND_M;
+            cc += JMP_CC_S;
             break;
         case 'P':
-            cc += COND_P;
+            cc += JMP_CC_P;
             break;
         default:
             return -1;

@@ -7,8 +7,6 @@
 
 class ForthVM; 
 
-typedef void (*Syscall)(ForthVM *vm);
-
 class ForthVM
 {
 
@@ -54,6 +52,14 @@ public:
 
     void set(uint8_t reg, uint16_t v) {
         _regs[reg] = v;
+    }
+
+    void setPC(uint16_t a) {
+        _pc = a;
+    }
+
+    uint16_t getPC() {
+        return _pc;
     }
 
     bool getC() {
@@ -168,7 +174,7 @@ public:
         bool byteMode = (op == LDS_OP_LD_B || op == LDS_OP_ST_B);
         uint8_t delta = byteMode ? 1 : 2;
 
-        uint8_t u5 = _u5(instr);
+        uint8_t U5 = _u5(instr);
 
         switch(mode)
         {
@@ -368,7 +374,7 @@ public:
         uint8_t cc   = (instr & JMP_CC_BITS) >> JMP_CC_BITS_POS;
         uint8_t op   = (instr & JMP_MODE_BITS) >> JMP_MODE_BITS_POS;
         uint8_t mode = (instr & JMP_MODE_BITS) >> JMP_MODE_BITS_POS;
-        link         = (inst & JMP_LINK_BIT) != 0;
+        link         = (instr & JMP_LINK_BIT) != 0;
 
         switch((instr & JMP_SKIP_BITS) >> JMP_SKIP_BITS_POS)
         {
@@ -386,16 +392,16 @@ public:
 
             switch (cc)
             {
-                case COND_C:
+                case JMP_CC_C:
                     skip = !_c;
                     break;
-                case COND_Z:
+                case JMP_CC_Z:
                     skip = !_z;
                     break;
-                case COND_M:
+                case JMP_CC_S:
                     skip = !_sign;
                     break;
-                case COND_P:
+                case JMP_CC_P:
                     skip = !_odd;
                     break;
                 default:
@@ -438,7 +444,7 @@ public:
             case GEN_OP_NOP: break;
             case GEN_OP_HALT: _halted = true; break;
             case GEN_OP_EI: _interruptsEnabled = true; break;
-            case GEN_OP_EI: _interruptsEnabled = false; break;
+            case GEN_OP_DI: _interruptsEnabled = false; break;
             default: break;
         }
     }
@@ -504,7 +510,7 @@ public:
 
     void _or(uint8_t rega, uint16_t argb) {
         uint16_t r = _regs[rega] | argb;
-        _regs[a] = r;
+        _regs[rega] = r;
         _booleanFlags(r);
     }
 

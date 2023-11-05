@@ -2,7 +2,7 @@
 #define UKMAKER_TEST_H
 
 #include "TestSuite.h"
-#include "../runtime/ArduForth/ForthVM.h"
+#include "../runtime/ForthCPU/ForthVM.h"
 #include "../tools/Assembler.h"
 #include "../tools/Loader.h"
 
@@ -38,7 +38,7 @@ class Test {
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, opcode, "Should be an instruction");
+        assertEquals(tok->opcode->getCode(), opcode, "Should be an instruction");
     }
 
     void shouldGetALabel(const char *name) {
@@ -61,7 +61,7 @@ class Test {
         printf("         shouldGetAlias %s\n", alias);
         Token *tok = fasm->getToken();
         assertEquals(tok->type, TOKEN_TYPE_DIRECTIVE, "Type should be DIRECTIVE");
-        assertEquals(tok->opcode, DIRECTIVE_TYPE_ALIAS, "Should be an ALIAS");
+        assertEquals(tok->directive, DIRECTIVE_TYPE_ALIAS, "Should be an ALIAS");
         assertEquals(tok->arga, reg, "Register");
         assertString(tok->str, alias, "Alias");
     }

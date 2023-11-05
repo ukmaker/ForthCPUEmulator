@@ -40,6 +40,9 @@
 #define JMP_MODE_BITS      0x0300
 #define JMP_LINK_BIT_POS        7
 #define JMP_LINK_BIT       0x0080
+// Pseudo-op for JMPs
+#define JMP_OP_BITS_POS         7
+#define JMP_OP_BITS        0x0380
 // Load/Store
 #define LDS_U5_BIT_POS         13
 #define LDS_U5_BIT         0x2000
@@ -108,6 +111,15 @@
 #define JMP_LINK_NONE 0
 #define JMP_LINK_LINK 1
 
+#define JMP_OP_JP     0
+#define JMP_OP_JPL    1
+#define JMP_OP_JPM    2
+#define JMP_OP_JPML   3
+#define JMP_OP_JPI    4
+#define JMP_OP_JPIL   5
+#define JMP_OP_JR     6
+#define JMP_OP_JRL    7
+
 // ALU opcodes
 #define ALU_OP_MOV  0
 #define ALU_OP_ADD  1
@@ -131,5 +143,17 @@
 #define ALU_MODE_REGA_U8   2
 #define ALU_MODE_REGA_S8   3
 
+#define HEADER_BITS 8
+#define HEADER_MASK (0xff00)
+#define HEADER_HEADER_BIT 15
+#define HEADER_SCOPE_BITS 12
+#define HEADER_SCOPE_MASK (0x07 << HEADER_SCOPE_BITS)
+#define HEADER_SCOPE_NORMAL 0
+#define HEADER_SCOPE_IMMEDIATE 1
+#define HEADER_SCOPE_RUNTIME 2
+#define HEADER_SCOPE_EXECUTIVE 3
+#define HEADER_SCOPE_COMPILE 4
+#define HEADER_LOCALS_BIT 11
+#define HEADER_HAS_LOCALS 1
 
 #endif

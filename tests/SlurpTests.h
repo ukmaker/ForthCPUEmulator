@@ -219,7 +219,7 @@ class SlurpTests : public Test {
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, OP_MOV, "Should be a MOV instruction");
+        assertEquals(tok->opcode->getALUOp(), ALU_OP_MOV, "Should be a MOV instruction");
         // and we should parse the comment at the end of the line
         tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an end of line comment");
@@ -231,7 +231,7 @@ class SlurpTests : public Test {
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, OP_NOP, "Should be a NOP instruction");
+        assertEquals(tok->opcode->getALUOp(), GEN_OP_NOP, "Should be a NOP instruction");
     }
 
     void shouldGetLabel1() {
@@ -249,7 +249,7 @@ class SlurpTests : public Test {
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, OP_JP, "Should be a JP instruction");
+        assertEquals(tok->opcode->getJMPOp(), JMP_OP_JP, "Should be a JP instruction");
         // and we should parse the comment at the end of the line
         tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an end of line comment");
@@ -260,7 +260,7 @@ class SlurpTests : public Test {
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, OP_MOVI, "Should be a MOVI instruction");
+        assertEquals(tok->opcode->getALUOp(), ALU_OP_MOV, "Should be a MOV instruction");
     }
 
 };

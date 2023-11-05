@@ -37,7 +37,7 @@ public:
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode, OP_MOVI, "Should be a MOVI instruction");
+        assertEquals(tok->opcode->getALUOp(), ALU_OP_MOV, "Should be a MOVI instruction");
     }
 };
 #endif
