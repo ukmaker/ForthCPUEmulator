@@ -1,0 +1,153 @@
+; The core of the system is written in assembler for speed
+; You can link devices from Arduino-land by writing a word
+; which uses a SYSCALL instruction to call a function you
+; supply in C to wrap the Ardino library
+;
+; Memory Map
+; You should redefine this for your device depending on how
+; much memory you have available.
+; E.g. for an Atmega 328P (32KROM, 2K RAM) With no other code the Arduino environment
+; needs approx 900 bytes RAM - so we take only 1K for Forth
+;   #RAMSTART: 0x2000  ; Need to allocate 8K for Forth ROM
+;   #VARSTART: 0x2200  ; Allow 256 bytes for new Forth words in RAM. Allot 64 bytes for variables. 128 for LBUF (see below)
+;   #SPTOP:    0x23e0  ; Vars end at 0x2500 - 16 bytes for the data stack
+;   #RSTOP:    0x23fe  ; 16 bytes for the return stack 
+;
+; values below are for STM32F401
+;
+#SYSTEM:   0x0000 ; System reset vector
+#RAMSTART: 0x2000 ; Dictionary grows from here
+#VARSTART: 0x3000 ; Variables grow up from here
+#SPTOP:    0x3800 ; Data stack pointer grows down from here
+#RSTOP:    0x3ffe ; And the return stack from here
+                  ; This gives both stacks 2K bytes
+#LBUF_LEN: 80     ; Maximum length of the line buffer in chars
+#BASE_DEC: 10
+#BASE_HEX: 16
+#BASE_BIN: 2
+
+; The predefined SYSCALLs
+#SYSCALL_DEBUG: 0
+#SYSCALL_TYPE: 1
+#SYSCALL_TYPELN: 2
+#SYSCALL_DOT: 3
+#SYSCALL_GETC: 4
+#SYSCALL_PUTC: 5
+#SYSCALL_INLINE: 6
+#SYSCALL_FLUSH: 7
+#SYSCALL_NUMBER: 8
+#SYSCALL_H_AT: 9
+#SYSCALL_H_STORE: 10
+#SYSCALL_D_ADD: 11
+#SYSCALL_D_SUB: 12
+#SYSCALL_D_MUL: 13
+#SYSCALL_D_DIV: 14
+#SYSCALL_D_SR: 15
+#SYSCALL_D_SL: 16
+#SYSCALL_D_AND: 17
+#SYSCALL_D_OR: 18
+#SYSCALL_D_INVERT: 19
+#SYSCALL_DOT_C: 20
+#SYSCALL_COMPARE: 21
+#SYSCALL_FREE_MEMORY: 22
+#SYSCALL_SYSCALL: 23
+#SYSCALL_ARDUINO: 24
+#SYSCALL_QEXIT: 25
+; There was a good reason for leaving a gap. If only I could remember what it was....
+#SYSCALL_FOPEN: 32
+#SYSCALL_FCLOSE: 33
+#SYSCALL_FREAD: 34
+
+#MODE_EXECUTE: 0
+#MODE_COMPILE: 1
+#STATE_NOT_FOUND: 0
+#STATE_FOUND: 1
+
+#HEADER_MASK: 0x00ff
+#HEADER_HEADER_BIT: 15
+#HEADER_SCOPE_BITS: 12
+#HEADER_PASSIVE:     0x8000 ; 0b1000 0000 0000 0000 - Normal word    execute/compile
+#HEADER_IMMEDIATE:   0x9000 ; 0b1001 0000 0000 0000 - Immediate word error/execute
+#HEADER_RUNTIME:     0xa000 ; 0b1010 0000 0000 0000 - Runtime word   execute/error (e.g. ':')
+#HEADER_EXECUTIVE:   0xb000 ; 0b1011 0000 0000 0000 - Executive word execute/execute (e.g '(' ))
+#HEADER_COMPILETIME: 0xc000 ; 0b1100 0000 0000 0000 - Compiled word  error/compile
+#HEADER_HAS_LOCALS:  0x0800 ; 0b1000 1000 0000 0000 - This word allocates local variables
+
+.ORG #VARSTART
+%BASE: 2               ; Current system numeric base
+%LBUF_IDX: 2           ; Current line buffer byte pointer
+%LBUF_END: 2           ; Address of the last character in the buffer
+%LBUF_DATA: #LBUF_LEN  ; Line buffer data
+%DICTIONARY_POINTER: 2
+%CONTEXT: 2
+%CURRENT: 2
+%CORE: 2
+%MODE: 2
+%STATE: 2
+%FENCE: 2
+%TOKEN_HANDLER: 2      ; User-installable vector for a word to handle unknown tokens
+%USER_TOP: 2
+USER_VARS:
+.DATA 0
+
+
+.ORG #SYSTEM ; Start vector is at address 0
+START:
+  JPI COLD
+
+INT0:
+  JPI INT0_HANDLER
+INT1:
+  JPI INT1_HANDLER
+
+SYSCALLS:
+SYSCALL_TYPE:
+  ; Got here from a JL, so preserve RL
+  ; TOS SP is the address of the string
+  ; First word is the length
+  ; Use R0 as the address, R1 as the length, R2 as the char to write
+  ; Save to RS to start
+  PUSH R0,RS
+  PUSH R1,RS
+  PUSH R2,RS
+  POP R0,SP
+  LD R1,R0
+  ADDI R0,2 ; Point to first char
+SYSCALL_TYPE_LOOP:
+  POPR_B R0,R2 ; LD_B R2,(R0++)
+  STI_B R2,0xFFF2 ; write to the UART
+  SUBI R1,1
+  JRI[NZ] SYSCALL_TYPE_LOOP
+  POP R2,RS
+  POP R1,RS
+  POP R0,RS
+  JP RL
+
+COLD:
+  ; test the syscalls
+  LDI R0,MSG_HELLO
+  PUSH R0,SP
+  JPIL SYSCALL_TYPE
+  HALT
+
+
+INT0_HANDLER:
+INT1_HANDLER:
+  HALT
+
+
+MESSAGES: ; SYSTEM MESSAGES LIVE HERE
+MSG_HELLO:          .DATA 23 .SDATA "Hello! I'm a TIL :-) >>"
+MSG_UNKNOWN_TOKEN:  .DATA 14 .SDATA "Unknown token "
+MSG_IMMEDIATE_ONLY: .DATA 36 .SDATA "Immediate words forbidden at runtime"
+MSG_COMPILE_ONLY:   .DATA 39 .SDATA "Compile-time words forbidden at runtime"
+MSG_RUNTIME_ONLY:   .DATA 39 .SDATA "Runtime words forbidden at compile-time"
+MSG_SYSTEM_ERROR:   .DATA 12 .SDATA "System error"
+MSG_WORD_NOT_FOUND: .DATA 14 .SDATA "Word not found"
+MSG_PROMPT:         .DATA  5 .SDATA "OK >>"
+MSG_SP_UNDERFLOW:   .DATA 15 .SDATA "Stack underflow"
+MSG_RS_UNDERFLOW:   .DATA 22 .SDATA "Return stack underflow"
+
+
+DICTIONARY_END:
+

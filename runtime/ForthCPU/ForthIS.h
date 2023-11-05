@@ -56,8 +56,8 @@
 #define ALU_MODE_BITS_POS       8
 #define ALU_MODE_BITS      0x0300
 // General group
-#define GEN_OP_BITS_POS        10
-#define GEN_OP_BITS        0x1c00
+#define GEN_OP_BITS_POS         8
+#define GEN_OP_BITS        0x0700
 
 #define ARGA_BITS_POS 4
 #define ARGB_BITS_POS 0

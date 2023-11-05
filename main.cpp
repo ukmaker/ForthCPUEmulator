@@ -6,6 +6,7 @@
 #include "runtime/ForthCPU/ForthVM.h"
 #include "runtime/ForthCPU/UnsafeMemory.h"
 #include "runtime/ForthCPU/FSerial.h"
+#include "runtime/ForthCPU/UART.h"
 #include "tools/Assembler.h"
 #include "tools/Loader.h"
 #include "tools/Dumper.h"
@@ -31,7 +32,9 @@ uint8_t ram[16384];
 
 uint8_t rom[32];
 
-UnsafeMemory mem(ram, 16384, 0, rom, 64, 16384);
+UART uart;
+
+UnsafeMemory mem(ram, 16384, 0, rom, 64, 16384, &uart, 0xfff0, 0xfff7);
 
 
 ForthVM vm(&mem);
@@ -100,7 +103,7 @@ bool loadInnerInterpreter()
 {
 
   setMode();
-  fasm.slurp("fasm/core.fasm");
+  fasm.slurp("fasm/bootstrap.fasm");
   fasm.pass1();
   fasm.pass2();
   fasm.pass3();

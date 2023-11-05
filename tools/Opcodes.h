@@ -78,10 +78,10 @@ class Opcode {
     }
 
     bool isNamed(char *source, int pos, int len) {
-        int equal = false;
+        bool equal = false;
 
         if((int)strlen(_name) == len) {
-            int equal = true;
+            equal = true;
             for(int j=0; j<len; j++) {
                 if(source[pos + j] != _name[j]) {
                     equal = false;
@@ -155,6 +155,10 @@ class Opcode {
         return (_code & JMP_OP_BITS) >> JMP_OP_BITS_POS;
     }
 
+    uint8_t getGENOp() {
+        return (_code & GEN_OP_BITS) >> GEN_OP_BITS_POS;
+    }
+
     bool expectsRa() {
         return 
             (isALU() && getALUMode() == ALU_MODE_REG_REG)
@@ -220,6 +224,14 @@ class Opcode {
         _code &= ~(1 << LDS_U5_BIT_POS);
         _code |= ((u & 0x10) << (LDS_U5_BIT_POS - 4));
         setArgB(u);
+    }
+
+    void setLink(bool link) {
+        if(link) {
+            _code |= JMP_LINK_BIT;
+        } else {
+            _code &= ~JMP_LINK_BIT;
+        }
     }
 
 
@@ -312,13 +324,13 @@ class Opcodes {
     void _jmpCodes() {
         opcodes[idx++] = Opcode::jmpCode("JP",  JMP_MODE_ABS_REG,  JMP_LINK_NONE);
         opcodes[idx++] = Opcode::jmpCode("JPM", JMP_MODE_IND_REG,  JMP_LINK_NONE);
-        opcodes[idx++] = Opcode::jmpCode("JI",  JMP_MODE_ABS_HERE, JMP_LINK_NONE, true);
-        opcodes[idx++] = Opcode::jmpCode("JR",  JMP_MODE_REL_HERE, JMP_LINK_NONE);
+        opcodes[idx++] = Opcode::jmpCode("JPI", JMP_MODE_ABS_HERE, JMP_LINK_NONE, true);
+        opcodes[idx++] = Opcode::jmpCode("JRI", JMP_MODE_REL_HERE, JMP_LINK_NONE);
 
         opcodes[idx++] = Opcode::jmpCode("JPL",  JMP_MODE_ABS_REG,  JMP_LINK_LINK);
         opcodes[idx++] = Opcode::jmpCode("JPML", JMP_MODE_IND_REG,  JMP_LINK_LINK);
-        opcodes[idx++] = Opcode::jmpCode("JIL",  JMP_MODE_ABS_HERE, JMP_LINK_LINK, true);
-        opcodes[idx++] = Opcode::jmpCode("JRL",  JMP_MODE_REL_HERE, JMP_LINK_LINK);
+        opcodes[idx++] = Opcode::jmpCode("JPIL", JMP_MODE_ABS_HERE, JMP_LINK_LINK, true);
+        opcodes[idx++] = Opcode::jmpCode("JRIL", JMP_MODE_REL_HERE, JMP_LINK_LINK);
     }
 
 

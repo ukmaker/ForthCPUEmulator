@@ -15,155 +15,143 @@ class SafeMemory : public Memory {
     public:
 
     SafeMemory(uint8_t *ram, size_t ramSize, uint16_t ramStart,
-        const uint8_t *rom, size_t romSize, uint16_t romStart) :
-        Memory(ram, ramSize, ramStart, rom, romSize, romStart) {}
+        const uint8_t *rom, size_t romSize, uint16_t romStart,
+        UART *uart, uint16_t uartStart, uint16_t uartEnd) :
+        Memory(ram, ramSize, ramStart, rom, romSize, romStart, uart, uartStart, uartEnd) {}
 
     ~SafeMemory() {}
 
 
+    void attachUnalignedWriteCallback(InvalidAccess fp);
+    void attachROMWriteCallback(InvalidAccess fp);
+    void attachUndefinedAccessCallback(InvalidAccess fp);
+
     void put(uint16_t addr, uint16_t w) {
-        if(_checkWWrite(addr)) {
-            *(uint16_t *)(_ram + addr - _ramStart) = w;
+        if(_checkWordAligned(addr)) {
+            switch(addressDecode(addr)) {
+                case MEMORY_RANGE_RAM:
+                    writeRAM(addr, w);
+                break;
+
+                case MEMORY_RANGE_ROM:
+                    writeROM(addr, w);
+                break;
+
+                case MEMORY_RANGE_UART:
+                    writeUART(addr, w);
+                break;
+
+                default:
+                    _writeUndefined(addr, w);
+                break;
+            }
         }
-    }
-
-    uint16_t get(uint16_t addr) {
-        
-        uint16_t rv = 0;
-
-        switch(_checkWRead(addr)) {
-            case MEMORY_ACCESS_RAM:
-                rv = *(uint16_t *)(_ram + addr - _ramStart);
-                break;
-
-            case MEMORY_ACCESS_ROM:
-                rv = *(uint16_t *)(_rom + addr - _romStart);
-                break;
-
-            default: 
-                break;
-        }
-        return rv;
     }
 
     void putC(uint16_t addr, uint8_t c) {
-        if(_checkCWrite(addr)) {
-            *(_ram + addr - _ramStart) = c;
+        switch(addressDecodeC(addr)) {
+            case MEMORY_RANGE_RAM:
+                writeCRAM(addr, c);
+            break;
+
+            default:
+                _writeUndefined(addr, c);
+            break;
+        }
+    }
+
+    void writeRAM(uint16_t addr, uint16_t data) {
+        *(_ram + addr - _ramStart) = data;
+    }
+
+    void writeCRAM(uint16_t addr, uint8_t data) {
+        *(_ram + addr - _ramStart) = data;
+    }
+
+    void writeRAM(uint16_t addr, uint16_t data) {
+        *(_ram + addr - _ramStart) = data;
+    }
+
+    void writeROM(uint16_t addr, uint16_t data) {
+        _romWrite(addr);
+    }
+
+    void writeUART(uint16_t addr, uint16_t data) {
+       _uart->write(addr - _uartStart, data);
+    }
+
+    void _writeUndefined(uint16_t addr, uint16_t data) {
+        _undefinedAccess(addr);
+    }
+
+    uint16_t get(uint16_t addr) {
+        if(_checkWordAligned(addr)) {
+            switch(addressDecode(addr)) {
+                case MEMORY_RANGE_RAM:
+                    return readRAM(addr);
+                break;
+
+                case MEMORY_RANGE_ROM:
+                    return readROM(addr);
+                break;
+
+                case MEMORY_RANGE_UART:
+                    return readUART(addr);
+                break;
+
+                default:
+                    return readUndefined(addr);
+                break;
+            }
         }
     }
 
     uint8_t getC(uint16_t addr) {
-        
-        uint8_t rv = 0;
+        switch(addressDecodeC(addr)) {
+            case MEMORY_RANGE_RAM:
+                return readCRAM(addr);
+            break;
 
-        switch(_checkCRead(addr)) {
-            case MEMORY_ACCESS_RAM:
-                rv = *(_ram + addr - _ramStart);
-                break;
+            case MEMORY_RANGE_ROM:
+                return readCROM(addr);
+            break;
 
-            case MEMORY_ACCESS_ROM:
-                rv = *(_rom + addr - _romStart);
-                break;
-
-            default: 
-                break;
+            default:
+                return readUndefined(addr);
+            break;
         }
-        return rv;
     }
 
-    uint8_t *addressOfChar(uint16_t location) {
-         switch(_checkCRead(location)) {
-            case MEMORY_ACCESS_RAM: return _ram + location - _ramStart;
-            //case MEMORY_ACCESS_ROM: return (uint8_t *)(_rom + location - _ramStart);
-            default: break;
+    uint8_t readCRAM(uint16_t addr) {
+        return *(_ram + addr - _ramStart);
+    }
 
-         }
-         return NULL;
-     }
+    uint8_t readCROM(uint16_t addr) {
+        return *(_rom + addr - _romStart);
+    }
 
-     uint16_t *addressOfWord(uint16_t location) {
-         switch(_checkWRead(location)) {
-            case MEMORY_ACCESS_RAM: return (uint16_t *)(_ram + location - _ramStart);
-            case MEMORY_ACCESS_ROM: return (uint16_t *)(_rom + location - _romStart);
-            default: break;
-         }
-         return NULL;
-     }
+    uint16_t readRAM(uint16_t addr) {
+        return *(uint16_t *)(_ram + addr - _ramStart);
+    }
 
-    void attachUnalignedWriteCallback(InvalidAccess fp);
-    void attachROMWriteCallback(InvalidAccess fp);
-    void attachUndefinedAccessCallback(InvalidAccess fp);
+    uint16_t readROM(uint16_t addr) {
+        return *(uint16_t *)(_rom + addr - _romStart);
+    }
+
+    uint16_t readUART(uint16_t addr) {
+        return _uart->read(addr - _uartStart);
+    }
+
+    uint16_t readUndefined(uint16_t addr) {
+        _undefinedAccess(addr);
+        return 0;
+    }
 
     protected:
 
     InvalidAccess _unalignedWrite;
     InvalidAccess _romWrite;
     InvalidAccess _undefinedAccess;
-
-    bool _checkWWrite(uint16_t addr) {
-        return _checkWrite(addr);
-    }
-
-    uint8_t _checkWRead(uint16_t addr) {
-        return _checkRead(addr);
-    }
-
-    bool _checkCWrite(int16_t addr) {
-        return _checkWrite(addr, false);
-    }
-
-    uint8_t _checkCRead(uint16_t addr) {
-        return _checkRead(addr, false);
-    }
-
-    bool _checkWrite(uint16_t addr, bool wordAligned = true) {
-        
-        uint8_t d = wordAligned ? 2 : 1;
-        
-        if(wordAligned && !_checkWordAligned(addr)) {
-            return false;
-        }
-        
-        if(addr >= _romStart && addr <= _romEnd - d) {
-            if(_romWrite != NULL) {
-                _romWrite(addr);
-            }
-            return false;
-        }
-        
-        if(addr < _ramStart || addr >= _ramEnd) {
-            if(_undefinedAccess != NULL) {
-                _undefinedAccess(addr);
-            }
-            return false;
-        }
-
-        return true;
-    }
-
-    uint8_t _checkRead(uint16_t addr, bool wordAligned = true) {
-        
-        uint8_t d = wordAligned ? 2 : 1;
-
-        if(wordAligned && !_checkWordAligned(addr)) {
-            return MEMORY_ACCESS_INVALID;
-        }
-        
-        if(addr >= _romStart && addr <= _romEnd - d) {
-            return MEMORY_ACCESS_ROM;
-        }
-        
-        if(addr >= _ramStart || addr <= _ramEnd - d) {
-            return MEMORY_ACCESS_RAM;
-        }
-
-        if(_undefinedAccess != NULL) {
-            _undefinedAccess(addr);
-
-        }
-
-        return MEMORY_ACCESS_INVALID;
-    }
 
     bool _checkWordAligned(uint16_t addr) {
         if((addr & 0x0001) != 0) {

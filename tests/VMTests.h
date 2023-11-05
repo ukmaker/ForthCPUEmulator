@@ -3,15 +3,6 @@
 
 #include "Test.h"
 
-void VMTests_printC(ForthVM *vm) {
-    // Syscall to print the char on the top of the stack
-    // ( c - )
-    uint16_t v = vm->pop();
-    char c = (char) v;
-
-    printf("%c", c);
-}
-
 class VMTests : public Test {
 
     public:
@@ -39,7 +30,7 @@ class VMTests : public Test {
 
 void shouldHalt() {
 
-    vm->ram()->put(0, GEN_OP_HALT << GEN_OP_BITS_POS);
+    vm->ram()->put(0, (GROUP_GEN << GROUP_BITS_POS)  + (GEN_OP_HALT << GEN_OP_BITS_POS));
     vm->reset();
     vm->step();
     assert(vm->halted(), "VM should be halted");
@@ -48,8 +39,8 @@ void shouldHalt() {
 
 void shouldAdd() {
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  3);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  7);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  3);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  7);
     loader->loadALU(ALU_OP_ADD, ALU_MODE_REG_REG, REG_A, REG_B);
     loader->loadGen(GEN_OP_HALT);
     vm->reset();
@@ -57,15 +48,13 @@ void shouldAdd() {
     vm->step();
     vm->step();
     vm->step();
-    assert(vm->get(REG_A) == 10, "Should add");    
+    assertEquals(vm->get(REG_A), 10, "Should add");    
 }
 
 void shouldGenerateCarry() {
     loader->reset();
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_0,0);
-    loader->load(0x8000);
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_1,0);
-    loader->load(0x8000);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_0,0x8000);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_1,0x8000);
     loader->loadALU(ALU_OP_ADD, ALU_MODE_REG_REG, REG_0, REG_1);
     loader->loadGen(GEN_OP_HALT);
     vm->reset();
@@ -73,14 +62,14 @@ void shouldGenerateCarry() {
     vm->step();
     vm->step();
     vm->step();
-    assert(vm->get(REG_0) == 0, "Should add");    
+    assertEquals(vm->get(REG_0), 0, "Should add");    
     assert(vm->getC(), "Should generate carry");    
 }
 
 void shouldSub() {
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  3);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  7);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  3);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  7);
     loader->loadALU(ALU_OP_SUB, ALU_MODE_REG_REG, REG_A, REG_B);
     loader->loadGen(GEN_OP_HALT);
     vm->reset();
@@ -109,10 +98,8 @@ void shouldSubL() {
 
 void shouldMulL() {
     loader->reset();
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_A, 0);
-    loader->load(0x1111);
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_B, 0);
-    loader->load(4);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_A, 0x1111);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_B, 4);
     loader->loadALU(ALU_OP_MUL, ALU_MODE_REG_REG, REG_A, REG_B);
     loader->loadGen(GEN_OP_HALT);
     vm->reset();
@@ -126,10 +113,8 @@ void shouldMulL() {
 
 void shouldAnd() {
     loader->reset();
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_A, 0);
-    loader->load(0x1111);
-    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_B, 0);
-    loader->load(0x1010);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_A, 0x1111);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_B, 0x1010);
     loader->loadALU(ALU_OP_AND, ALU_MODE_REG_REG, REG_A, REG_B);
     loader->loadGen(GEN_OP_HALT);
     vm->reset();
@@ -144,7 +129,7 @@ void shouldAnd() {
 
 void shouldLDBI() {
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  5);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  5);
     vm->reset();
     vm->step();
 
@@ -164,9 +149,9 @@ void shouldAddI() {
 
 void shouldCMP() {
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  0);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  0);
-    loader->loadALU(ALU_OP_CMP, REG_A, REG_B);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  0);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  0);
+    loader->loadALU(ALU_OP_CMP, ALU_MODE_REG_REG, REG_A, REG_B);
     vm->reset();
     vm->step();
     vm->step();
@@ -176,9 +161,9 @@ void shouldCMP() {
     assertEquals(vm->getO(),0, "No signed-carry on equals");   
 
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  1);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  0);
-    loader->loadALU(ALU_OP_CMP, REG_A, REG_B);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  1);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  0);
+    loader->loadALU(ALU_OP_CMP, ALU_MODE_REG_REG, REG_A, REG_B);
     vm->reset();
     vm->step();
     vm->step();
@@ -189,9 +174,9 @@ void shouldCMP() {
 
 
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  0);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  1);
-    loader->loadALU(ALU_OP_CMP, REG_A, REG_B);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  0);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_B,  1);
+    loader->loadALU(ALU_OP_CMP, ALU_MODE_REG_REG, REG_A, REG_B);
     vm->reset();
     vm->step();
     vm->step();
@@ -202,9 +187,9 @@ void shouldCMP() {
 
 
     loader->reset();
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_A,  1);
-    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_REG, REG_B,  -1);
-    loader->loadALU(ALU_OP_CMP, REG_A, REG_B);
+    loader->loadALU(ALU_OP_MOV, ALU_MODE_REG_U4, REG_A,  1);
+    loader->loadLDS(LDS_OP_LD, LDS_MODE_REG_HERE, REG_B, 0xffff);
+    loader->loadALU(ALU_OP_CMP, ALU_MODE_REG_REG, REG_A, REG_B);
     vm->reset();
     vm->step();
     vm->step();

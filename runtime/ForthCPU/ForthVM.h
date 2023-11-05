@@ -78,26 +78,6 @@ public:
         return _sign;
     }
 
-    void push(uint16_t c) {
-        _ram->put(_regs[REG_SP], (uint16_t)c);
-        _regs[REG_SP]-=2;
-    }
-
-    uint16_t pop() {
-        _regs[REG_SP]+=2;
-        return _ram->get(_regs[REG_SP]);
-    }
-
-    void pushr(uint16_t c) {
-        _ram->put(_regs[REG_RS], (uint16_t)c);
-        _regs[REG_RS]-=2;
-    }
-
-    uint16_t popr() {
-        _regs[REG_RS]+=2;
-        return _ram->get(_regs[REG_RS]);
-    }
-
     uint8_t readByte(uint16_t addr) {
         return _ram->getC(addr);
     }
@@ -190,6 +170,7 @@ public:
                 regb = _argb(instr);
                 arga = _regs[rega];
                 argb = _here;
+                _pc += 2;
             break;
             
             case LDS_MODE_REG_REG_INC:
@@ -298,7 +279,7 @@ public:
         switch(op)
         {
             case ALU_OP_MOV:
-                _regs[arga] = argb;
+                _regs[rega] = argb;
             break;
 
             case ALU_OP_ADD:
@@ -368,7 +349,7 @@ public:
 
         bool ccapply = false;
         bool ccinvert = false;
-        bool skip = false;
+        bool skip = true;
         bool link = false;
 
         uint8_t cc   = (instr & JMP_CC_BITS) >> JMP_CC_BITS_POS;

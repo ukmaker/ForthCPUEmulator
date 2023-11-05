@@ -15,11 +15,11 @@ class LabelTests : public Test {
         skipTokens(1);
         shouldGetALabel("TOKEN_CA");
         skipTokens(10);
-        shouldGetAnOpcode("PUSHR", 0x53);
+        shouldGetAnOpcode("PUSHR",0x53ad);
     }
 
     void shouldOpenTestLabels() {
-        shouldOpenAsmFile("tests/test-labels.fasm", 70);
+        shouldOpenAsmFile("tests/test-labels.fasm", 499);
     }
 
 };

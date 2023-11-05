@@ -33,7 +33,10 @@ class SlurpTests : public Test {
         shouldGetMOV();
         shouldGetNOP();
         shouldGetLabel1();
-        shouldGetJP();
+        shouldGetJPI();
+        shouldGetMOVI();
+
+        shouldGetST();
 
 
 
@@ -45,7 +48,7 @@ class SlurpTests : public Test {
 
 
     void shouldOpenTestSlurp() {
-        shouldOpenAsmFile("tests/test-slurp.fasm", 946);
+        shouldOpenAsmFile("tests/test-slurp.fasm", 954);
     }
 
 
@@ -244,12 +247,12 @@ class SlurpTests : public Test {
         assertString(tok->name, "LABEL1", "Should parse label");
     }
 
-    void shouldGetJP() {
-        printf("         shouldGetJP\n");
+    void shouldGetJPI() {
+        printf("         shouldGetJPI\n");
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
-        assertEquals(tok->opcode->getJMPOp(), JMP_OP_JP, "Should be a JP instruction");
+        assertEquals(tok->opcode->getJMPOp(), JMP_OP_JPI, "Should be a JPI instruction");
         // and we should parse the comment at the end of the line
         tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an end of line comment");
@@ -261,6 +264,18 @@ class SlurpTests : public Test {
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
         assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
         assertEquals(tok->opcode->getALUOp(), ALU_OP_MOV, "Should be a MOV instruction");
+        // and we should parse the comment at the end of the line
+        tok = fasm->getToken();
+        assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an end of line comment");
+        assertEquals(tok->type, TOKEN_TYPE_COMMENT, "Type should be COMMENT");
+    }
+
+    void shouldGetST() {
+        printf("         shouldGetST\n");
+        Token *tok = fasm->getToken();
+        assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");
+        assertEquals(tok->type, TOKEN_TYPE_OPCODE, "Type should be OPCODE");
+        assertEquals(tok->opcode->getLDSOp(), LDS_OP_ST, "Should be a ST instruction");
     }
 
 };

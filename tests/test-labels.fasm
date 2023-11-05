@@ -16,6 +16,6 @@ TOKEN_CA:
   ; CA - Length of this token
   ; WA - End of the buffer
   ; 
-  PUSHR I ; Save I
-  PUSHR WA
-  PUSHR CA
+  PUSHR I,SP   ; Save I on the data stack
+  PUSHR WA,RS  ; Save WA on the return stack
+  PUSHR CA,R0  ; Save CA on a stack pointed to by R0

@@ -148,7 +148,7 @@ public:
 
         breakpoint();
 
-        if(!_verbose || _showWords) return;
+        //if(!_verbose || _showWords) return;
         printf("%04x - %04x D[%04x] R[%04x] [S%d O%d Z%d C%d] [0:%04x 1:%04x 2:%04x 3:%04x 4:%04x 5:%04x 6:%04x 7:%04x",
                pc,
                _vm->ram()->get(pc),

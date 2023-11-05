@@ -28,12 +28,12 @@ class Test {
 
     void shouldOpenAsmFile(const char *file, uint32_t size) {
         printf("         shouldOpenAsmFile\n");
-        assert(fasm->slurp(file), "Failed to open file ", file);
-        assertEquals(fasm->fileSize(), size, "Wrong file size");
+        assert(fasm->slurp(file), "Should open file ", file);
+        assertEquals(fasm->fileSize(), size, "File size");
     }
 
 
-    void shouldGetAnOpcode(const char *name, uint8_t opcode) {
+    void shouldGetAnOpcode(const char *name, uint16_t opcode) {
         printf("         shouldGet%s\n", name);
         Token *tok = fasm->getToken();
         assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize an opcode");

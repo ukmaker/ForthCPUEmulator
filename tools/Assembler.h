@@ -715,7 +715,7 @@ public:
 
         Symbol *sym;
 
-        if (tok->isData())
+        if (tok->isData() || tok->isOrg() || tok->isVar())
         {
             // constants are put in-place
             // references to strings or vars are the address
@@ -1269,7 +1269,7 @@ public:
                 break;
 
                 case LDS_MODE_REG_HERE:
-                    instructionRR(tok);
+                    instructionRI(tok);
                 break;
 
                 case LDS_MODE_REG_REG_INC:
@@ -1298,8 +1298,32 @@ public:
             }
 
         } else if(tok->opcode->isJMP()) {
+            switch(tok->opcode->getJMPOp()) {
+                case JMP_OP_JP:
+                case JMP_OP_JPM:
+                    instructionRb(tok);
+                break;
 
+                case JMP_OP_JPL:
+                case JMP_OP_JPML:
+                    instructionRb(tok);
+                    link(tok);
+                break;
+
+                case JMP_OP_JPI:
+                case JMP_OP_JR:
+                    instructionU16(tok);
+                    break;
+
+                case JMP_OP_JPIL:
+                case JMP_OP_JRL:
+                    instructionU16(tok);
+                    link(tok);
+                break;
+            }
         } else {
+            // GEN calls
+           // No arguments for any of these opcodes yet
 
         }
         return tok;
@@ -1338,6 +1362,15 @@ public:
     void instructionRI(Token *tok)
     {
         getArgA(tok) & comma(tok) & getImm(tok);
+    }
+
+    void instructionU16(Token *tok)
+    {
+        getImm(tok);
+    }
+
+    void link(Token *tok) {
+        tok->opcode->setLink(true);
     }
 
     /**
@@ -1570,7 +1603,7 @@ public:
         int arg;
         if ((arg = getArg(tok)) != -1)
         {
-            tok->arga = arg;
+            tok->opcode->setArgA(arg);
             return true;
         }
 
@@ -1582,7 +1615,7 @@ public:
         int arg;
         if ((arg = getArg(tok)) != -1)
         {
-            tok->argb = arg;
+            tok->opcode->setArgB(arg);
             return true;
         }
 
