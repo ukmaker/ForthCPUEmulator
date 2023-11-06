@@ -231,7 +231,7 @@ public:
                 break;
             case TOKEN_TYPE_DIRECTIVE:
                 if(tok->isAlias()) {
-                    vocab.setAlias(tok->arga, tok->str);
+                    vocab.setAlias(tok->opcode->getArgA(), tok->str);
                 }
                 break;
 
@@ -697,7 +697,8 @@ public:
                 ram->putC(tok->address + 1, tok->highByte());
                 ram->putC(tok->address, tok->lowByte());
                 if(tok->opcode->isImmediate()) {
-                    ram->put(tok->address + 2, tok->value);
+                    ram->putC(tok->address + 3, (tok->value & 0xff00) >> 8);
+                    ram->putC(tok->address + 2, tok->value & 0xff);
                 }
             }
             break;
@@ -837,6 +838,9 @@ public:
                     {
                         printf("ERROR: long value exceeded (%d) at line %d \n", tok->value, tok->line);
                         return false;
+                    }
+                    if(tok->opcode->getJMPOp() == JMP_OP_JR || tok->opcode->getJMPOp() == JMP_OP_JRL) {
+                        tok->value = (sym->token->address - tok->address - 2) >> 1;
                     }
                 }
                 tok->symbolic = false;
@@ -1239,7 +1243,7 @@ public:
 
         if (condition != 0)
         {
-            tok->condition = condition;
+            tok->opcode->setCondition(condition);
         }
 
         if(tok->opcode->isALU()) {
@@ -1429,29 +1433,6 @@ public:
         inc();
         return true;
     }
-       
-    bool getImm4(Token *tok, bool swap = false)
-    {
-        
-        if (getImm(tok))
-        {
-            if (tok->value > -9 && tok->value < 8)
-            {
-                if (swap)
-                {
-                    tok->arga = tok->value;
-                }
-                else
-                {
-                    tok->argb = tok->value;
-                }
-                return true;
-            }
-            tok->type = TOKEN_TYPE_ERROR;
-            tok->str = TINY_RANGE_EXCEEDED;
-        }
-        return false;
-    }
 
     bool getUImm4(Token *tok)
     {
@@ -1459,7 +1440,7 @@ public:
         {
             if (tok->value >= 0 && tok->value < 16)
             {
-                tok->argb = tok->value;
+                tok->opcode->setArgB(tok->value);
                 return true;
             }
             tok->type = TOKEN_TYPE_ERROR;
@@ -1474,8 +1455,8 @@ public:
         {
             if (tok->value > -129 && tok->value < 128)
             {
-                tok->arga = tok->value >> 4;
-                tok->argb = tok->value & 0x0f;
+                tok->opcode->setArgA(tok->value >> 4);
+                tok->opcode->setArgB(tok->value & 0x0f);
                 return true;
             }
             tok->type = TOKEN_TYPE_ERROR;
@@ -1490,8 +1471,8 @@ public:
         {
             if (tok->value >= 0 && tok->value < 256)
             {
-                tok->arga = tok->value >> 4;
-                tok->argb = tok->value & 0x0f;
+                tok->opcode->setArgA(tok->value >> 4);
+                tok->opcode->setArgB(tok->value & 0x0f);
                 return true;
             }
             tok->type = TOKEN_TYPE_ERROR;

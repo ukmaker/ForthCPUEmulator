@@ -212,17 +212,17 @@ class Opcode {
 
     void setArgA(uint8_t a) {
         _code &= 0xff0f;
-        _code |= ((a & 0x0f) << 4);
+        _code |= (uint16_t)((a & 0x0f) << 4);
     }
 
     void setArgB(uint8_t b) {
         _code &= 0xfff0;
-        _code |= (b & 0x0f);
+        _code |= (uint16_t)(b & 0x0f);
     }
 
     void setU5(uint8_t u) {
-        _code &= ~(1 << LDS_U5_BIT_POS);
-        _code |= ((u & 0x10) << (LDS_U5_BIT_POS - 4));
+        _code &= (uint16_t)~(1 << LDS_U5_BIT_POS);
+        _code |= (uint16_t)((u & 0x10) << (LDS_U5_BIT_POS - 4));
         setArgB(u);
     }
 
@@ -234,6 +234,36 @@ class Opcode {
         }
     }
 
+    uint16_t getArgA() {
+        return (_code & 0xf0) >> 4;
+    }
+
+    uint16_t getArgB() {
+        return _code & 0x0f;
+    }
+
+    uint16_t getU5() {
+
+        uint16_t v = (_code & LDS_U5_BIT) >> (LDS_U5_BIT_POS -4);
+        v |= _code & 0x0f;
+        return v;
+    }
+
+    bool isConditional() {
+        return (_code & JMP_CC_APPLY_BIT) != 0;
+    }
+
+    bool isConditionNegated() {
+         return (_code & JMP_CC_INVERT_BIT) != 0;       
+    }
+
+    uint8_t getCondition() {
+        return (_code & JMP_CC_BITS) >> JMP_CC_BITS_POS;
+    }
+
+    void setCondition(uint16_t condition) {
+        _code |= (condition << JMP_CC_BITS_POS);
+    }
 
     protected:
 
@@ -274,8 +304,8 @@ class Opcodes {
 
             _ldsCodes("LD",   "LDI",   "POP",    "POPR",    LDS_OP_LD);
             _ldsCodes("LD_B", "LDI_B", "POP_B",  "POPR_B",  LDS_OP_LD_B);
-            _ldsCodes("ST",   "STI",   "PUSH",   "PUSHR",   LDS_OP_ST);
-            _ldsCodes("ST_B", "STI_B", "PUSH_B", "PUSHR_B", LDS_OP_ST_B);
+            _ldsCodes("ST",   "STI",   "PUSHR",  "PUSH",   LDS_OP_ST);
+            _ldsCodes("ST_B", "STI_B", "PUSHR_B","PUSH_B", LDS_OP_ST_B);
 
             _ldxCodes();
 
@@ -287,7 +317,16 @@ class Opcodes {
         Opcode *find(char *source, int pos, int len) {
             for(uint16_t i=0; i< idx; i++) {
                 if(opcodes[i]->isNamed(source, pos, len)) {
-                    return opcodes[i];
+
+                    Opcode *op =  opcodes[i];
+                    Opcode *clone = new Opcode(
+                        op->getName(),
+                        op->getCode(),
+                        op->isLdx(),
+                        op->isJMP(),
+                        op->isImmediate()
+                    );
+                    return clone;
                 }
             }
 

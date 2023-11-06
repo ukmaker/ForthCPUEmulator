@@ -115,7 +115,7 @@ bool loadInnerInterpreter()
     // When deployed to a board DP will point to the start of RAM
     fasm.writeMemory(&mem);
     Symbol *sym = fasm.getSymbol("DICTIONARY_END");
-    vm.ram()->put(10, sym->token->address);
+    //vm.ram()->put(10, sym->token->address);
     loaded = true;
   }
 

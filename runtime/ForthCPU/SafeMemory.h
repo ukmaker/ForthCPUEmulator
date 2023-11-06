@@ -54,6 +54,10 @@ class SafeMemory : public Memory {
                 writeCRAM(addr, c);
             break;
 
+            case MEMORY_RANGE_UART:
+                writeCUART(addr, c);
+            break;
+
             default:
                 _writeUndefined(addr, c);
             break;
@@ -61,14 +65,10 @@ class SafeMemory : public Memory {
     }
 
     void writeRAM(uint16_t addr, uint16_t data) {
-        *(_ram + addr - _ramStart) = data;
+        *(uint16_t *)(_ram + addr - _ramStart) = data;
     }
 
     void writeCRAM(uint16_t addr, uint8_t data) {
-        *(_ram + addr - _ramStart) = data;
-    }
-
-    void writeRAM(uint16_t addr, uint16_t data) {
         *(_ram + addr - _ramStart) = data;
     }
 
@@ -77,6 +77,10 @@ class SafeMemory : public Memory {
     }
 
     void writeUART(uint16_t addr, uint16_t data) {
+       _uart->write(addr - _uartStart, data);
+    }
+
+    void writeCUART(uint16_t addr, uint8_t data) {
        _uart->write(addr - _uartStart, data);
     }
 
@@ -116,6 +120,10 @@ class SafeMemory : public Memory {
                 return readCROM(addr);
             break;
 
+            case MEMORY_RANGE_UART:
+                return readCUART(addr);
+            break;
+
             default:
                 return readUndefined(addr);
             break;
@@ -139,6 +147,10 @@ class SafeMemory : public Memory {
     }
 
     uint16_t readUART(uint16_t addr) {
+        return _uart->read(addr - _uartStart);
+    }
+
+    uint8_t readCUART(uint16_t addr) {
         return _uart->read(addr - _uartStart);
     }
 

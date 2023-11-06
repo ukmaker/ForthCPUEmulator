@@ -165,7 +165,7 @@ public:
                _vm->get(REG_7));
 
         // PC [ S O Z C ] CC OP ARGS
-        printf(" A:%04x B:%04x PC:%04x WA:%04x SP:%04x RS:%04x FP:%04x I:%04x]",
+        printf(" A:%04x B:%04x PC:%04x WA:%04x SP:%04x RS:%04x FP:%04x I:%04x RL:%04x]",
                _vm->get(REG_A),
                _vm->get(REG_B),
                _vm->getPC(),
@@ -173,7 +173,8 @@ public:
                _vm->get(REG_SP),
                _vm->get(REG_RS),
                _vm->get(REG_FP),
-               _vm->get(REG_I));
+               _vm->get(REG_I),
+               _vm->get(REG_RL));
 
         _dumper->printOpcode(_asm, tok);
 

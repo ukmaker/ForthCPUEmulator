@@ -225,7 +225,7 @@ public:
             break;
 
             case LDS_OP_LD_B:
-                _ram->putC(argb, arga);
+                _regs[rega] = _ram->getC(argb);
             break;
 
             case LDS_OP_ST:
@@ -233,7 +233,7 @@ public:
             break;
 
             case LDS_OP_ST_B:
-                _regs[rega] = _ram->getC(argb);
+                _ram->putC(argb, arga);
             break;
         }
     }
@@ -361,10 +361,10 @@ public:
         {
             case JMP_SKIP_CC:
                 ccapply = true;
+                ccinvert = true;
                 break;
             case JMP_SKIP_NOT_CC:
                 ccapply = true;
-                ccinvert = true;
                 break;
             default: break;
         }
@@ -396,20 +396,20 @@ public:
             switch(mode)
             {
                 case JMP_MODE_ABS_REG:
-                    _pc = _regs[_argb(instr)];
                     if(link) _regs[REG_RL] = _here;
+                    _pc = _regs[_argb(instr)];
                     break;
                 case JMP_MODE_IND_REG:
-                    _pc = _ram->get(_regs[_argb(instr)]);
                     if(link) _regs[REG_RL] = _here;
+                    _pc = _ram->get(_regs[_argb(instr)]);
                     break;
                 case JMP_MODE_ABS_HERE:
-                    _pc = _ram->get(_pc);
                     if(link) _regs[REG_RL] = _here + 2;
+                    _pc = _ram->get(_pc);
                     break;
                 case JMP_MODE_REL_HERE:
-                    _pc += _ram->get(_pc);
                     if(link) _regs[REG_RL] = _here + 2;
+                    _pc += _ram->get(_pc);
                     break;
             }
         } else {

@@ -1,8 +1,8 @@
 ; ( sep - tokenLength )
+.ORG 0
 TOKEN:
   .DATA 5
   .SDATA "TOKEN"
-  .DATA EXECUTE
 TOKEN_WA:
   .DATA TOKEN_CA
 TOKEN_CA:
@@ -16,6 +16,6 @@ TOKEN_CA:
   ; CA - Length of this token
   ; WA - End of the buffer
   ; 
-  PUSHR I,SP   ; Save I on the data stack
+  PUSHR RI,SP   ; Save I on the data stack
   PUSHR WA,RS  ; Save WA on the return stack
   PUSHR CA,R0  ; Save CA on a stack pointed to by R0

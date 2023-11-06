@@ -21,22 +21,22 @@ class AssemblyVocabulary {
             }
         }
 
-        argnames[REG_0] = "R0";
-        argnames[REG_1] = "R1";
-        argnames[REG_2] = "R2";
-        argnames[REG_3] = "R3";
-        argnames[REG_4] = "R4";
-        argnames[REG_5] = "R5";
-        argnames[REG_6] = "R6";
-        argnames[REG_7] = "R7";
-        argnames[REG_A] = "A";
-        argnames[REG_B] = "B";
+        argnames[REG_0]  = "R0";
+        argnames[REG_1]  = "R1";
+        argnames[REG_2]  = "R2";
+        argnames[REG_3]  = "R3";
+        argnames[REG_4]  = "R4";
+        argnames[REG_5]  = "R5";
+        argnames[REG_6]  = "R6";
+        argnames[REG_7]  = "R7";
+        argnames[REG_A]  = "RA";
+        argnames[REG_B]  = "RB";
         argnames[REG_RL] = "RL";
         argnames[REG_WA] = "WA";
         argnames[REG_SP] = "SP";
         argnames[REG_RS] = "RS";
         argnames[REG_FP] = "FP";
-        argnames[REG_I] = "I";
+        argnames[REG_I]  = "RI";
 
         ccnames[JMP_CC_C] = "C";
         ccnames[JMP_CC_Z] = "Z";

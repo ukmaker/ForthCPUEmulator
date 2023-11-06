@@ -49,6 +49,15 @@ class Test {
         assertString(tok->name, name, "Should parse label");
     }
 
+    void shouldGetALabel(const char *name, uint16_t addr) {
+        printf("         shouldGetLabel %s\n", name);
+        Token *tok = fasm->getToken();
+        assert(tok->type != TOKEN_TYPE_ERROR, "Should tokenize a line label");
+        assertEquals(tok->type, TOKEN_TYPE_LABEL, "Type should be LABEL");
+        assertString(tok->name, name, "Should parse label");
+        assertEquals(tok->address, addr, "Address should match");
+    }
+
    void shouldGetAConstant(const char *name, uint16_t value) {
         printf("         shouldGetConstant %s\n", name);
         Token *tok = fasm->getToken();
@@ -62,7 +71,7 @@ class Test {
         Token *tok = fasm->getToken();
         assertEquals(tok->type, TOKEN_TYPE_DIRECTIVE, "Type should be DIRECTIVE");
         assertEquals(tok->directive, DIRECTIVE_TYPE_ALIAS, "Should be an ALIAS");
-        assertEquals(tok->arga, reg, "Register");
+        assertEquals(tok->opcode->getArgA(), reg, "Register");
         assertString(tok->str, alias, "Alias");
     }
 

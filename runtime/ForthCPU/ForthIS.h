@@ -34,6 +34,8 @@
 // Jumps
 #define JMP_SKIP_BITS_POS      12
 #define JMP_SKIP_BITS      0x3000
+#define JMP_CC_APPLY_BIT   0x2000
+#define JMP_CC_INVERT_BIT  0x1000
 #define JMP_CC_BITS_POS        10
 #define JMP_CC_BITS        0x0c00
 #define JMP_MODE_BITS_POS       8

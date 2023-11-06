@@ -131,15 +131,24 @@ class Dumper {
     }
 
     void instructionRR(Assembler *fasm, Token *tok) {
-        printf("%s,%s",fasm->vocab.argname(tok->arga), fasm->vocab.argname(tok->argb));
+        printf("%s,%s",fasm->vocab.argname(tok->opcode->getArgA()), fasm->vocab.argname(tok->opcode->getArgB()));
     }
 
     void instructionRU4(Assembler *fasm, Token *tok) {
         // register in arga 4-bit tiny immediates in value
         if(tok->symbolic) {
-            printf("%s,%s",fasm->vocab.argname(tok->arga), tok->str);
+            printf("%s,%s",fasm->vocab.argname(tok->opcode->getArgA()), tok->str);
         } else {
-            printf("%s,%01x",fasm->vocab.argname(tok->arga), tok->value);
+            printf("%s,%01x",fasm->vocab.argname(tok->opcode->getArgA()), tok->value);
+        }
+    }
+
+    void instructionRU5(Assembler *fasm, Token *tok) {
+        // register in arga 4-bit tiny immediates in value
+        if(tok->symbolic) {
+            printf("%s,%s",fasm->vocab.argname(tok->opcode->getArgA()), tok->str);
+        } else {
+            printf("%s,%01x",fasm->vocab.argname(tok->opcode->getArgA()), tok->opcode->getU5());
         }
     }
 
@@ -161,20 +170,24 @@ class Dumper {
 
     void instructionU16(Assembler *fasm, Token *tok) {
         if(tok->symbolic) {
-            printf("%s,%s",fasm->vocab.argname(tok->arga), tok->str);
+            printf("%s,%s",fasm->vocab.argname(tok->opcode->getArgA()), tok->str);
         } else {
-            printf("%s,%04x",fasm->vocab.argname(tok->arga), tok->value);
+            printf("%s,%04x",fasm->vocab.argname(tok->opcode->getArgA()), tok->value);
         }
     }
 
     void printOpcode(Assembler *fasm, Token *tok) {
+        if(tok == NULL || tok->opcode == NULL) {
+            return;
+        }
+        
         printf("%s", tok->opcode->getName());
-        if(tok->isConditional()) {
+        if(tok->opcode->isConditional()) {
             printf("[");
-            if(tok->isConditionNegated()) {
+            if(tok->opcode->isConditionNegated()) {
                 printf("N");
             }
-            printf("%s", fasm->vocab.ccname(tok->getCondition()));
+            printf("%s", fasm->vocab.ccname(tok->opcode->getCondition()));
             printf("] ");
         } else {
             printf(" ");
@@ -207,7 +220,7 @@ class Dumper {
                 break;
 
                 case LDS_MODE_REG_HERE:
-                    instructionRR(fasm, tok);
+                    instructionU16(fasm, tok);
                 break;
 
                 case LDS_MODE_REG_REG_INC:

@@ -40,6 +40,10 @@ public:
                 writeCRAM(addr, c);
             break;
 
+            case MEMORY_RANGE_UART:
+                writeCUART(addr, c);
+            break;
+
             default:
                 _writeUndefined(addr, c);
             break;
@@ -47,7 +51,7 @@ public:
     }
 
     void writeRAM(uint16_t addr, uint16_t data) {
-        *(_ram + addr - _ramStart) = data;
+        *(uint16_t *)(_ram + addr - _ramStart) = data;
     }
 
     void writeCRAM(uint16_t addr, uint8_t data) {
@@ -59,6 +63,10 @@ public:
     }
 
     void writeUART(uint16_t addr, uint16_t data) {
+       _uart->write(addr - _uartStart, data);
+    }
+
+    void writeCUART(uint16_t addr, uint8_t data) {
        _uart->write(addr - _uartStart, data);
     }
 
@@ -92,6 +100,10 @@ public:
                 return readCRAM(addr);
             break;
 
+            case MEMORY_RANGE_UART:
+                return readCUART(addr);
+            break;
+
             case MEMORY_RANGE_ROM:
                 return readCROM(addr);
             break;
@@ -104,6 +116,10 @@ public:
 
     uint8_t readCRAM(uint16_t addr) {
         return *(_ram + addr - _ramStart);
+    }
+
+    uint8_t readCUART(uint16_t addr) {
+        return _uart->read(addr - _uartStart);
     }
 
     uint8_t readCROM(uint16_t addr) {

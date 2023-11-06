@@ -106,28 +106,113 @@ SYSCALL_TYPE:
   ; TOS SP is the address of the string
   ; First word is the length
   ; Use R0 as the address, R1 as the length, R2 as the char to write
+  ; R3 is the address of the UART
   ; Save to RS to start
   PUSH R0,RS
   PUSH R1,RS
   PUSH R2,RS
+  PUSH R3,RS
   POP R0,SP
   LD R1,R0
   ADDI R0,2 ; Point to first char
+  LDI R3,0xFFF2
 SYSCALL_TYPE_LOOP:
-  POPR_B R0,R2 ; LD_B R2,(R0++)
-  STI_B R2,0xFFF2 ; write to the UART
+  POP_B R2,R0 ; LD_B R2,(R0++)
+  ST_B  R2,R3 ; write to the UART
   SUBI R1,1
-  JRI[NZ] SYSCALL_TYPE_LOOP
+  JPI[NZ] SYSCALL_TYPE_LOOP
   POP R2,RS
   POP R1,RS
   POP R0,RS
   JP RL
 
+SYSCALL_TYPELN:
+    PUSH RL,RS
+    JPIL SYSCALL_TYPE
+    POP RL,RS
+    PUSH R0,SP
+    PUSH R1,SP
+    LDI R1,0xFFF2
+    MOVI R0,0x0d ; CR
+    ST_B R0,R1
+    MOVI R0,0x0a ; LF
+    ST_B R0,R1
+    POP R1,SP
+    POP R0,SP
+    JP RL
+
+SYSCALL_DOT:
+    ; (val base signed -- )
+    PUSH R0,RS
+    PUSH RA,RS
+    PUSH R2,RS
+    PUSH R3,RS
+    POP R0,SP
+    POP RA,SP
+    POP R2,SP
+    LDI R3,0xFFF2
+
+    CMPAI 2     ; Base 2?
+    JRI[Z] SYSCALL_DOT_BINARY
+
+    CMPAI 0x10  ; Base 16?
+    JRI[Z] SYSCALL_DOT_HEX
+
+    CMPAI 0 ; Signed?
+    JRI[NZ] SYSCALL_DOT_SIGNED
+
+    ; Print in unsigned decimal
+SYSCALL_DOT_BINARY:
+SYSCALL_DOT_HEX:
+SYSCALL_DOT_SIGNED:
+
+
+UD_DIV: 
+    ; Unsigned double division
+    ; R0,R1 are 24-bit dividend
+    ; R2 is 8-bit quotient
+    ; Returns
+    ; R0 contains 16-bit quotient
+    ; R1 contains 8-bit remainder
+    MOVAI 0x10 ; 16-bits to work on
+UD_DIV_LOOP:
+    ADD R1,R1
+    ADD R0,R0
+    JRI[NC] UD_DIV_LOOP_1
+    ; Increment the MSB
+    ADDI R1,1
+UD_DIV_LOOP_1:
+    SUB R1,R2
+    JRI[M] UD_DIV_CONT ; 
+    ADD R1,R2
+UD_DIV_CONT:
+    ADDI R0,1 ; Set low bit
+    SUBI RA,1
+    JRI[NZ] UD_DIV_LOOP
+    JP RL
+
+
+
 COLD:
   ; test the syscalls
-  LDI R0,MSG_HELLO
-  PUSH R0,SP
-  JPIL SYSCALL_TYPE
+  ; Set up the stacks
+  LDI SP,0x1000
+  LDI RS,0x2000
+  ;LDI R0,MSG_HELLO
+  ;PUSH R0,SP
+  ;JPIL SYSCALL_TYPE
+
+  ;LDI R0,MSG_UNKNOWN_TOKEN
+  ;PUSH R0,SP
+  ;JPIL SYSCALL_TYPELN
+
+  ; Try a division
+  MOVAI 124
+  MOV R0,RA
+  MOVI R1,0
+  MOVI R2,6
+  JPIL UD_DIV
+
   HALT
 
 

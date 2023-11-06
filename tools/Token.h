@@ -93,11 +93,6 @@ class Token {
     // For an instruction, a string or a directive
     Opcode *opcode;
     uint8_t directive = 0;
-    uint8_t arga = 0;
-    uint8_t argb = 0;
-    uint8_t condition = 0;
-    uint8_t apply = 0;
-    uint8_t invert = 0;
     uint8_t U5 = 0;
 
     // Instructions with immediate values may need to
@@ -108,18 +103,6 @@ class Token {
 
     Token *next = NULL;
     Token *label = NULL;
-
-    bool isConditional() {
-        return (condition & 8) != 0;
-    }
-
-    bool isConditionNegated() {
-         return (condition & 4) != 0;       
-    }
-
-    uint8_t getCondition() {
-        return condition & 0x03;
-    }
 
     bool isNamed(char *n) {
         return strcasecmp(name, n) == 0;

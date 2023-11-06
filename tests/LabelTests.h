@@ -8,9 +8,9 @@ class LabelTests : public Test {
     LabelTests(TestSuite *suite, ForthVM *fvm, Assembler *vmasm, Loader *loader) : Test(suite, fvm, vmasm, loader) {}
     void run() {
         shouldOpenTestLabels();
-        skipTokens(1);
+        skipTokens(2);
         shouldGetALabel("TOKEN");
-        skipTokens(3);
+        skipTokens(2);
         shouldGetALabel("TOKEN_WA");
         skipTokens(1);
         shouldGetALabel("TOKEN_CA");
@@ -19,7 +19,7 @@ class LabelTests : public Test {
     }
 
     void shouldOpenTestLabels() {
-        shouldOpenAsmFile("tests/test-labels.fasm", 499);
+        shouldOpenAsmFile("tests/test-labels.fasm", 490);
     }
 
 };

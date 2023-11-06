@@ -15,12 +15,12 @@ $SNAME: "This is a string" ; Stored as a Forth-string <len><str>
 .DATA #HNAME
 
 .ORG 0 ; Start of code
-START:  MOV A,B ; Register to register move
+START:  MOV RA,RB ; Register to register move
         NOP
 LABEL1: JPI 0x000a   ; Jump with literal
-MOVI A,#BNAME ; Load B with the value 0b00010110 
-ST B,A     ; Store the contents of A in the address pointed to by BNAME
-MOVIL B,%VAR   ; Load A with the address of the variable VAR
+MOVI RA,#BNAME ; Load B with the value 0b00010110 
+ST RB,RA     ; Store the contents of A in the address pointed to by BNAME
+MOVIL RB,%VAR   ; Load A with the address of the variable VAR
 
 LABEL2: JRI #HNAME   ; Jump with literal value defined as #CONST:
 LABEL3: JRI[NC] %VAR ; Jump to address of VAR. Emits a warning
