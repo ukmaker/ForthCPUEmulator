@@ -14,6 +14,11 @@ public:
 
     ~UnsafeMemory() {}
 
+
+    void clk() {
+        _uart->tick();
+    }
+
     void put(uint16_t addr, uint16_t w) {
         switch(addressDecode(addr)) {
             case MEMORY_RANGE_RAM:

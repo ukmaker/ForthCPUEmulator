@@ -231,7 +231,7 @@ public:
                 break;
             case TOKEN_TYPE_DIRECTIVE:
                 if(tok->isAlias()) {
-                    vocab.setAlias(tok->opcode->getArgA(), tok->str);
+                    vocab.setAlias(tok->getAliasReg(), tok->getAliasName());
                 }
                 break;
 
@@ -745,7 +745,7 @@ public:
             printf("ERROR: invalid string data %s at line %d \n", tok->str, tok->line);
             return false;
         }
-        else
+        else if(tok->isCode()) 
         {
             if(tok->opcode->expectsU4()) {
 
@@ -800,7 +800,7 @@ public:
                 }
 
                 tok->opcode->setArgA((tok->value & (0xf << 4)) >> 4);
-                tok->opcode->setArgA(tok->value);
+                tok->opcode->setArgB(tok->value);
                 tok->symbolic = false;
             } else if(tok->opcode->expectsU5()) {
                 // 5-bit immediate
@@ -834,15 +834,16 @@ public:
                 else
                 {
                     tok->value = sym->token->value;
-                    if (tok->value > 65535 || tok->value < -32768)
-                    {
-                        printf("ERROR: long value exceeded (%d) at line %d \n", tok->value, tok->line);
-                        return false;
-                    }
-                    if(tok->opcode->getJMPOp() == JMP_OP_JR || tok->opcode->getJMPOp() == JMP_OP_JRL) {
-                        tok->value = (sym->token->address - tok->address - 2) >> 1;
-                    }
                 }
+                if (tok->value > 65535 || tok->value < -32768)
+                {
+                    printf("ERROR: long value exceeded (%d) at line %d \n", tok->value, tok->line);
+                    return false;
+                }
+                if(tok->opcode->getJMPOp() == JMP_OP_JR || tok->opcode->getJMPOp() == JMP_OP_JRL) {
+                    tok->value = (sym->token->address - tok->address - 2);
+                }
+                
                 tok->symbolic = false;
             }
         }
@@ -1199,7 +1200,7 @@ public:
     }
 
     bool getAlias(Token *tok) {
-        if(getArgA(tok) && comma(tok) && getAliasName(tok)) {
+        if(getAliasReg(tok) && comma(tok) && getAliasName(tok)) {
             return true;
         }
         return false;
@@ -1229,6 +1230,10 @@ public:
         }
 
         tok = new Token(NULL, line, pos);
+        if(line == 244) {
+            line -=1;
+            line +=1;
+        }
         tok->type = TOKEN_TYPE_OPCODE;
         tok->opcode = opcode;
         if (source[idx] == '[')
@@ -1485,7 +1490,7 @@ public:
     bool getImm(Token *tok)
     {
         skipSpaces();
-        if (source[idx] == '#' || source[idx] == '$' || source[idx] == '%')
+        if (source[idx] == '#' || source[idx] == '$' || source[idx] == '%' || source[idx] == '_')
         {
             if (!getSymbolName(tok))
             {
@@ -1534,14 +1539,14 @@ public:
         int len = idx - here;        char *name = (char *)malloc(len + 1); // +1 for the ending \0
         strncpy(name, &source[idx - len], len);
         name[len] = '\0';
-            tok->str = name;
-            tok->symbolic = true;
+        tok->str = name;
+        tok->symbolic = true;
         return true;
     }
 
 
-    // move the name following idx to the token's str
-    // set the symoblic flag
+    // move the name following idx to the token
+    // set the symbolic flag
     bool getAliasName(Token *tok)
     {
         int here = idx;
@@ -1565,10 +1570,12 @@ public:
             idx++;
             pos++;
         }
-        int len = idx - here;        char *name = (char *)malloc(len + 1); // +1 for the ending \0
+        int len = idx - here;        
+        char *name = (char *)malloc(len + 1); // +1 for the ending \0
         strncpy(name, &source[idx - len], len);
         name[len] = '\0';
-        tok->str = name;
+        tok->setAliasName(name);
+        tok->symbolic = true;
         return true;
     }
 
@@ -1585,6 +1592,18 @@ public:
         if ((arg = getArg(tok)) != -1)
         {
             tok->opcode->setArgA(arg);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool getAliasReg(Token *tok)
+    {
+        int arg;
+        if ((arg = getArg(tok)) != -1)
+        {
+            tok->setAliasReg(arg);
             return true;
         }
 
@@ -1764,7 +1783,20 @@ public:
                         return -1;
                     }
                     c = parseEscapedChar(source[idx]);
+                } else {
+                    c = source[idx];
                 }
+                tok->value = c;
+                inc();
+                if (idx >= sourceLen)
+                {
+                    return -1;
+                }
+                if(source[idx] != '\'') {
+                    return -1;
+                }
+                inc();
+                return 0;
                 break;
             case '0':
                 inc();

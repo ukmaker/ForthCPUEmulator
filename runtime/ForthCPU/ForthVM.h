@@ -40,6 +40,7 @@ public:
 
     void step() {
         _clock();
+        _ram->clk();
     }
 
     void run() {
@@ -134,11 +135,11 @@ public:
         return _argb(instr) + (((instr & LDS_U5_BIT) >> LDS_U5_BIT_POS) << 4);
     }
 
-    int8_t _u8(uint16_t instr) {
-        return (instr & 0xff);
+    int16_t _u8(uint16_t instr) {
+        return (instr & 0x00ff);
     }
 
-    int8_t _s8(uint16_t instr) {
+    int16_t _s8(uint16_t instr) {
         return _sex(instr & 0xff);
     }
 

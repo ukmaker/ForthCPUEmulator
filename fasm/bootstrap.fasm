@@ -26,6 +26,17 @@
 #BASE_HEX: 16
 #BASE_BIN: 2
 
+#UART_STATUS_REG:                   0xfff0
+#UART_DATA_REG:                     0xfff2
+#UART_RX_DIV_REG:                   0xfff4
+#UART_TX_DIV_REG:                   0xfff6
+#UART_STATUS_BIT_RX_DATA_AVAILABLE: 0x0001
+#UART_STATUS_BIT_TX_ACTIVE:         0x0002
+#UART_STATUS_BIT_TX_DONE:           0x0004
+#UART_STATUS_BIT_TX_INT:            0x0008
+#UART_STATUS_BIT_RX_INT:            0x0010
+
+
 ; The predefined SYSCALLs
 #SYSCALL_DEBUG: 0
 #SYSCALL_TYPE: 1
@@ -93,125 +104,314 @@ USER_VARS:
 
 .ORG #SYSTEM ; Start vector is at address 0
 START:
-  JPI COLD
+    JPI COLD
 
 INT0:
-  JPI INT0_HANDLER
+    JPI INT0_HANDLER
 INT1:
-  JPI INT1_HANDLER
+    JPI INT1_HANDLER
 
 SYSCALLS:
+
+SYSCALL_UART_TX_BYTE:
+    ; ( RA=byte )
+    .ALIAS R1,UART_STATUS_REG
+    .ALIAS R2,UART_DATA_REG
+    .ALIAS R0,CHAR
+
+    MOV CHAR,RA
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG
+
+_SYSCALL_UART_TX_BYTE_WAIT_READY:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_TX_DONE
+    JRI[Z] _SYSCALL_UART_TX_BYTE_WAIT_READY
+
+    ST CHAR,UART_DATA_REG
+    JP RL
+
+
 SYSCALL_TYPE:
-  ; Got here from a JL, so preserve RL
-  ; TOS SP is the address of the string
-  ; First word is the length
-  ; Use R0 as the address, R1 as the length, R2 as the char to write
-  ; R3 is the address of the UART
-  ; Save to RS to start
-  PUSH R0,RS
-  PUSH R1,RS
-  PUSH R2,RS
-  PUSH R3,RS
-  POP R0,SP
-  LD R1,R0
-  ADDI R0,2 ; Point to first char
-  LDI R3,0xFFF2
-SYSCALL_TYPE_LOOP:
-  POP_B R2,R0 ; LD_B R2,(R0++)
-  ST_B  R2,R3 ; write to the UART
-  SUBI R1,1
-  JPI[NZ] SYSCALL_TYPE_LOOP
-  POP R2,RS
-  POP R1,RS
-  POP R0,RS
-  JP RL
+    ; ( addr -- )
+    ; Print a FORTH String
+    ; Got here from a JL, so preserve RL
+    ; TOS SP is the address of the string
+    ; First word of the string is the length
+    ; Use R0 as the address, R1 as the length, R2 as the char to write
+    ; Save to RS to start
+    .ALIAS R0,ADDR
+    .ALIAS R1,LEN
+    .ALIAS RA,CHAR
+
+    PUSH RL,RS
+
+    POP ADDR,SP
+    LD LEN,ADDR
+    ADDI ADDR,2 ; Point to first char
+_SYSCALL_TYPE_LOOP:
+    POP_B CHAR,ADDR ; LD_B RA,(R0++)
+    PUSH R0,RS
+    PUSH R1,RS
+
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP R1,RS
+    POP R0,RS
+    SUBI R1,1
+    JRI[NZ] _SYSCALL_TYPE_LOOP
+
+    POP RL,RS
+    JP RL
 
 SYSCALL_TYPELN:
     PUSH RL,RS
-    JPIL SYSCALL_TYPE
+    JRIL SYSCALL_TYPE
+    JRIL SYSCALL_CRET
     POP RL,RS
-    PUSH R0,SP
-    PUSH R1,SP
-    LDI R1,0xFFF2
-    MOVI R0,0x0d ; CR
-    ST_B R0,R1
-    MOVI R0,0x0a ; LF
-    ST_B R0,R1
-    POP R1,SP
-    POP R0,SP
+    JP RL
+
+SYSCALL_CRET:
+
+    PUSH RL,RS
+
+    MOVI RA,0x0d ; CR
+    JRIL SYSCALL_UART_TX_BYTE
+    
+    MOVI RA,0x0a ; LF
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP RL,RS
     JP RL
 
 SYSCALL_DOT:
     ; (val base signed -- )
-    PUSH R0,RS
-    PUSH RA,RS
-    PUSH R2,RS
-    PUSH R3,RS
-    POP R0,SP
-    POP RA,SP
-    POP R2,SP
-    LDI R3,0xFFF2
+    .ALIAS R0,VAL
+    .ALIAS R1,BASE
+    .ALIAS R2,SIGNED
+    .ALIAS R3,DIGIT
+    .ALIAS R4,IDX
+    .ALIAS R5,MASK
+
+    ; Save registers
+    PUSH RL,RS
+
+    POP SIGNED,SP
+    POP BASE,SP
+    POP VAL,SP
+
+    MOV RA,BASE
 
     CMPAI 2     ; Base 2?
-    JRI[Z] SYSCALL_DOT_BINARY
+    JRI[Z] _SYSCALL_DOT_BINARY
 
     CMPAI 0x10  ; Base 16?
-    JRI[Z] SYSCALL_DOT_HEX
+    JRI[Z] _SYSCALL_DOT_HEX
 
     CMPAI 0 ; Signed?
-    JRI[NZ] SYSCALL_DOT_SIGNED
+    JRI[NZ] _SYSCALL_DOT_SIGNED
 
     ; Print in unsigned decimal
-SYSCALL_DOT_BINARY:
-SYSCALL_DOT_HEX:
-SYSCALL_DOT_SIGNED:
+    JRI _SYSCALL_DOT_UNSIGNED
 
+_SYSCALL_DOT_SIGNED:
+    ; is the value negative?
+    BITI VAL,15
+    JRI[Z] _SYSCALL_DOT_UNSIGNED
+    ; Yes, so emit a minus sign and make it positive
+    PUSH VAL,RS
+    LDI RA,'-'
+    JRIL SYSCALL_UART_TX_BYTE
+    POP DIGIT,RS
+    MOVI VAL,0
+    SUB VAL,DIGIT ; Make positive
+
+_SYSCALL_DOT_UNSIGNED:
+    ; keep dividing by ten and pushing the remainder to the stack until there is nothing left
+    ; {R1,R0} contains the input
+    ; R2 contains 10
+    ; Result is in R0, R1 is remainder
+    MOVI DIGIT,0 ; Keep track of the number of digits
+_SYSCALL_DOT_UNSIGNED_LOOP:
+    MOVI R1,0
+    MOVI R2,10
+
+    PUSH DIGIT,RS
+    JRIL UD_DIV
+    POP DIGIT,RS
+
+    ADDI DIGIT,1
+    MOV RA,R1
+    ADDAI '0'
+    PUSH RA,SP
+    CMPI R0,0
+    JRI[NZ] _SYSCALL_DOT_UNSIGNED_LOOP
+    ; Now print out the digits
+_SYSCALL_DOT_UNSIGNED_PRINT_LOOP:
+    PUSH DIGIT,RS
+    POP RA,SP
+    JRIL SYSCALL_UART_TX_BYTE
+    POP DIGIT,RS
+    SUBI DIGIT,1
+    JRI[NZ] _SYSCALL_DOT_UNSIGNED_PRINT_LOOP
+
+    JRI _SYSCALL_DOT_RETURN
+
+; Print in binary
+_SYSCALL_DOT_BINARY:
+    LDI IDX,0x10
+_SYSCALL_DOT_BINARY_LOOP:
+    SLI VAL,1
+    JRI[C] _SYSCALL_DOT_BINARY_ONE
+    PUSH VAL,RS
+    PUSH IDX,RS
+    MOVAI '0'
+    JRI _SYSCALL_DOT_BINARY_TX
+_SYSCALL_DOT_BINARY_ONE:
+    MOVAI '1'
+_SYSCALL_DOT_BINARY_TX:
+    JRIL SYSCALL_UART_TX_BYTE
+    POP IDX,RS
+    POP VAL,RS
+    SUBI IDX,1
+    JRI[NZ] _SYSCALL_DOT_BINARY_LOOP
+    JRI _SYSCALL_DOT_RETURN
+
+_SYSCALL_DOT_HEX:
+    LDI IDX,4
+_SYSCALL_DOT_HEX_LOOP:
+    LDI RA,0xf000
+    AND RA,VAL
+    SRI RA,12
+    PUSH VAL,RS
+    PUSH IDX,RS
+    JRIL _SYSCALL_DOT_HEXDIGIT
+    POP IDX,RS
+    POP VAL,RS
+    SLI  VAL,4
+    SUBI IDX,1
+    JRI[NZ] _SYSCALL_DOT_HEX_LOOP
+    JRI _SYSCALL_DOT_RETURN
+
+_SYSCALL_DOT_RETURN:
+    ; Restore registers
+    POP RL,RS
+    JP RL
+
+_SYSCALL_DOT_HEXDIGIT:
+    ; ( RA=digit )
+    PUSH RL,RS
+    CMPAI 0x0a
+    JRI[NC] _SYSCALL_DOT_HEXDIGIT_GT9
+    ; 0-9
+    ADDAI '0'
+    JRI _SYSCALL_DOT_HEXDIGIT_OUT
+_SYSCALL_DOT_HEXDIGIT_GT9:
+    SUBAI 0x0a
+    ADDAI 'a'
+_SYSCALL_DOT_HEXDIGIT_OUT:
+    JRIL SYSCALL_UART_TX_BYTE
+    POP RL,RS
+    JP RL
 
 UD_DIV: 
+    ; Internal routine passes args and results in registers
     ; Unsigned double division
-    ; R0,R1 are 24-bit dividend
-    ; R2 is 8-bit quotient
+    ;   - {R1,R0} are 24-bit dividend
+    ;   - R2 is 8-bit quotient
     ; Returns
-    ; R0 contains 16-bit quotient
-    ; R1 contains 8-bit remainder
+    ;   - R0 contains 16-bit quotient
+    ;   - R1 contains 8-bit remainder
+    ; Destroys
+    ;   - RA
+    ;
+    ;
     MOVAI 0x10 ; 16-bits to work on
-UD_DIV_LOOP:
+_UD_DIV_LOOP:
     ADD R1,R1
     ADD R0,R0
-    JRI[NC] UD_DIV_LOOP_1
+    JRI[NC] _UD_DIV_LOOP_1
     ; Increment the MSB
     ADDI R1,1
-UD_DIV_LOOP_1:
+_UD_DIV_LOOP_1:
     SUB R1,R2
-    JRI[M] UD_DIV_CONT ; 
-    ADD R1,R2
-UD_DIV_CONT:
+    JRI[M] _UD_DIV_SKIP ; 
     ADDI R0,1 ; Set low bit
+    JRI _UD_DIV_CONT
+_UD_DIV_SKIP:
+    ADD R1,R2
+_UD_DIV_CONT:
     SUBI RA,1
-    JRI[NZ] UD_DIV_LOOP
+    JRI[NZ] _UD_DIV_LOOP
+_UD_DIV_DONE:
     JP RL
 
 
 
 COLD:
-  ; test the syscalls
-  ; Set up the stacks
-  LDI SP,0x1000
-  LDI RS,0x2000
-  ;LDI R0,MSG_HELLO
-  ;PUSH R0,SP
-  ;JPIL SYSCALL_TYPE
+    ; test the syscalls
+    ; Set up the stacks
+    LDI SP,0x1000
+    LDI RS,0x2000
 
-  ;LDI R0,MSG_UNKNOWN_TOKEN
-  ;PUSH R0,SP
-  ;JPIL SYSCALL_TYPELN
+    LDI R0,MSG_HELLO
+    PUSH R0,SP
+    JPIL SYSCALL_TYPE
+    LDI R0,MSG_HELLO
+    PUSH R0,SP
+    JPIL SYSCALL_TYPE
 
-  ; Try a division
-  MOVAI 124
-  MOV R0,RA
-  MOVI R1,0
-  MOVI R2,6
-  JPIL UD_DIV
+    LDI R0,MSG_UNKNOWN_TOKEN
+    PUSH R0,SP
+    JPIL SYSCALL_TYPELN
+
+    ; Try a division
+    .ALIAS R0,DDL
+    .ALIAS R1,DDH
+    .ALIAS R2,QUOT
+    .ALIAS R3,SIGNED
+    .ALIAS R4,BASE
+    
+    LDI RA,999
+    MOV DDL,RA
+    MOVI DDH,0
+    MOVI QUOT,6
+    JPIL UD_DIV
+
+    MOVAI 0x0a ; the base (hex)
+    MOV BASE,RA
+    MOVI SIGNED,0 ; no used but has to be passed
+    ; Save regs for later
+    .ALIAS R0,RESULT
+    .ALIAS R1,REMAINDER
+    PUSH REMAINDER,RS
+    PUSH BASE,RS
+    PUSH SIGNED,RS
+
+    ; Output the result
+    ; R0 - quot
+    ; R1 - rem
+    ; ( val base signed -- )
+    ; print quot 
+    ; println
+    ; print rem
+    ; println
+PRINT_QUOT:
+    PUSH RESULT,SP
+    PUSH BASE,SP
+    PUSH SIGNED,SP
+    JRIL SYSCALL_DOT
+    JRIL SYSCALL_CRET
+
+PRINT_REM:
+    POP SIGNED,RS
+    POP BASE,RS
+    POP REMAINDER,RS
+    PUSH REMAINDER,SP
+    PUSH BASE,SP
+    PUSH SIGNED,SP
+    JRIL SYSCALL_DOT
+    JRIL SYSCALL_CRET
 
   HALT
 

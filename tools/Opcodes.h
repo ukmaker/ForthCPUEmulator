@@ -14,7 +14,7 @@ class Opcode {
         _name(name), _code(code), _isLdx(false), _isJmp(false), _isImmediate(false) {}
 
     Opcode(const char *name, uint16_t code, bool isLdx) :
-        _name(name), _code(code), _isLdx(isLdx), _isJmp(false), _isImmediate(false) {}
+        _name(name), _code(code), _isLdx(isLdx), _isJmp(false), _isImmediate(isLdx) {}
 
     Opcode(const char *name, uint16_t code, bool isLdx, bool isJmp) :
         _name(name), _code(code), _isLdx(isLdx), _isJmp(isJmp), _isImmediate(false) {}
@@ -22,13 +22,13 @@ class Opcode {
     Opcode(const char *name, uint16_t code, bool isLdx, bool isJmp, bool isImmediate) :
         _name(name), _code(code), _isLdx(isLdx), _isJmp(isJmp), _isImmediate(isImmediate) {}
 
-    static Opcode *aluCode(const char *name, uint16_t op, uint16_t mode) {
+    static Opcode *aluCode(const char *name, uint16_t op, uint16_t mode, bool isImmediate) {
         uint16_t opcode = 
             (GROUP_ALU << GROUP_BITS_POS)
         +   (op << ALU_OP_BITS_POS)
         +   (mode << ALU_MODE_BITS_POS);
 
-        return new Opcode(name, opcode);
+        return new Opcode(name, opcode, false, false, isImmediate);
     }
 
     static Opcode *genCode(const char *name, uint16_t op) {
@@ -336,10 +336,10 @@ class Opcodes {
     protected:
 
     void _aluCodes(const char *a, const char *b, const char *c, const char *d, uint16_t op) {
-        opcodes[idx++] = Opcode::aluCode(a, op, ALU_MODE_REG_REG);
-        opcodes[idx++] = Opcode::aluCode(b, op, ALU_MODE_REG_U4);
-        opcodes[idx++] = Opcode::aluCode(c, op, ALU_MODE_REGA_U8);
-        opcodes[idx++] = Opcode::aluCode(d, op, ALU_MODE_REGA_S8);
+        opcodes[idx++] = Opcode::aluCode(a, op, ALU_MODE_REG_REG, false);
+        opcodes[idx++] = Opcode::aluCode(b, op, ALU_MODE_REG_U4,  false);
+        opcodes[idx++] = Opcode::aluCode(c, op, ALU_MODE_REGA_U8, false);
+        opcodes[idx++] = Opcode::aluCode(d, op, ALU_MODE_REGA_S8, false);
     }
 
     void _genCode(const char *name, uint16_t op) {
@@ -364,12 +364,12 @@ class Opcodes {
         opcodes[idx++] = Opcode::jmpCode("JP",  JMP_MODE_ABS_REG,  JMP_LINK_NONE);
         opcodes[idx++] = Opcode::jmpCode("JPM", JMP_MODE_IND_REG,  JMP_LINK_NONE);
         opcodes[idx++] = Opcode::jmpCode("JPI", JMP_MODE_ABS_HERE, JMP_LINK_NONE, true);
-        opcodes[idx++] = Opcode::jmpCode("JRI", JMP_MODE_REL_HERE, JMP_LINK_NONE);
+        opcodes[idx++] = Opcode::jmpCode("JRI", JMP_MODE_REL_HERE, JMP_LINK_NONE, true);
 
         opcodes[idx++] = Opcode::jmpCode("JPL",  JMP_MODE_ABS_REG,  JMP_LINK_LINK);
         opcodes[idx++] = Opcode::jmpCode("JPML", JMP_MODE_IND_REG,  JMP_LINK_LINK);
         opcodes[idx++] = Opcode::jmpCode("JPIL", JMP_MODE_ABS_HERE, JMP_LINK_LINK, true);
-        opcodes[idx++] = Opcode::jmpCode("JRIL", JMP_MODE_REL_HERE, JMP_LINK_LINK);
+        opcodes[idx++] = Opcode::jmpCode("JRIL", JMP_MODE_REL_HERE, JMP_LINK_LINK, true);
     }
 
 

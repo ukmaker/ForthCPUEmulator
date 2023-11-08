@@ -37,6 +37,8 @@ class Memory {
 
     virtual uint8_t getC(uint16_t addr)=0;
 
+    virtual void clk()=0;
+
     uint8_t addressDecode(uint16_t addr) {
         if(addr >= _ramStart  && addr <= _ramEnd -1)  return MEMORY_RANGE_RAM;
         if(addr >= _romStart  && addr <= _romEnd -1)  return MEMORY_RANGE_ROM;

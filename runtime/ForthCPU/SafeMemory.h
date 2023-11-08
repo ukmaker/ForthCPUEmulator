@@ -26,6 +26,10 @@ class SafeMemory : public Memory {
     void attachROMWriteCallback(InvalidAccess fp);
     void attachUndefinedAccessCallback(InvalidAccess fp);
 
+    void clk() {
+        _uart->tick();
+    }
+
     void put(uint16_t addr, uint16_t w) {
         if(_checkWordAligned(addr)) {
             switch(addressDecode(addr)) {

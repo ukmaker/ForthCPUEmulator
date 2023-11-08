@@ -156,7 +156,7 @@ class Dumper {
         if(tok->symbolic) {
             printf("%s", tok->str);
         } else {
-            printf("%0x2", tok->value);
+            printf("%02x", tok->value);
         }
     }
 
@@ -164,7 +164,7 @@ class Dumper {
         if(tok->symbolic) {
             printf("%s", tok->str);
         } else {
-            printf("%0x2", tok->value);
+            printf("%02x", tok->value);
         }
     }
 
@@ -180,7 +180,7 @@ class Dumper {
         if(tok == NULL || tok->opcode == NULL) {
             return;
         }
-        
+
         printf("%s", tok->opcode->getName());
         if(tok->opcode->isConditional()) {
             printf("[");

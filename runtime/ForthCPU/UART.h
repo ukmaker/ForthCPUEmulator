@@ -134,8 +134,8 @@ class UART {
 
     bool _then = false;
 
-    uint16_t _rxClkDiv = 104;
-    uint16_t _txClkDiv = 104;
+    uint16_t _rxClkDiv = 1;
+    uint16_t _txClkDiv = 1;
 
     uint32_t _txTicks = 0;
     uint32_t _txBits  = 0;

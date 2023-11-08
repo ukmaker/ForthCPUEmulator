@@ -95,6 +95,9 @@ class Token {
     uint8_t directive = 0;
     uint8_t U5 = 0;
 
+    uint8_t aliasReg = 0;
+    const char *aliasName = NULL;
+
     // Instructions with immediate values may need to
     // have the value resolved
     // num3 and num6 values may be taken from a constant definition
@@ -221,6 +224,22 @@ class Token {
 
     uint8_t highByte() {
         return (opWord() & 0xff00) >> 8;
+    }
+
+    uint8_t getAliasReg() {
+        return aliasReg;
+    }
+
+    const char *getAliasName() {
+        return aliasName;
+    }
+
+    void setAliasReg(uint8_t reg) {
+        aliasReg = reg;
+    }
+
+    void setAliasName(const char *name) {
+        aliasName = name;
     }
 };
 

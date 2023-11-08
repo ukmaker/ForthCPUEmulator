@@ -55,8 +55,8 @@ class AssemblyVocabulary {
 
     }
 
-    void setAlias(uint8_t argname, const char *alias) {
-        strcpy(aliases[argname],alias);
+    void setAlias(uint8_t aliasReg, const char *aliasName) {
+        strcpy(aliases[aliasReg],aliasName);
     }
    
     const char *argname(uint8_t arg) {
