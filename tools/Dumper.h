@@ -72,6 +72,27 @@ class Dumper {
         fprintf(fp, "*/\n");
     }
 
+    void writeMEM(const char *name, Assembler *fasm, Memory *mem, uint16_t romStart, uint16_t romSize, bool progmem) {
+        FILE *fp = fopen(name, "w");
+        fprintf(fp, "#Format=AddrHex\n");
+        fprintf(fp, "#Depth=%d\n", romSize);
+        fprintf(fp, "#Width=16\n");
+        fprintf(fp, "#AddrRadix=3\n");
+        fprintf(fp, "#DataRadix=3\n");
+        fprintf(fp, "#Data\n");
+
+        for(uint16_t i=0; i<romSize; i+=2) {
+            writeMemLine(fp, mem, romStart, i);
+        }
+
+        fclose(fp);
+    }
+
+    void writeMemLine(FILE *fp, Memory *mem, uint16_t romStart, uint16_t idx) {
+        fprintf(fp,"%04x: %04x\n", romStart + idx, mem->get(romStart + idx));
+    }
+
+ 
     void dump(Assembler *fasm) {
 
         printf("==============================\n");

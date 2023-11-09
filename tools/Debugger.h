@@ -112,7 +112,7 @@ public:
     }
 
     void restep() {
-        restart();
+        reset();
         step();
     }
 

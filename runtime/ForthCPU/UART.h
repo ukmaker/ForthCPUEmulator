@@ -57,6 +57,7 @@ class UART {
             // Rising edge of available
             _rxInt = true;
             _rxAvailable = true;
+            _rxD = Serial.getc();
         }
 
         _then = now;
@@ -100,6 +101,7 @@ class UART {
             case 4: return readTxClkDiv(); break;
             default: break;
         }
+        return 0;
     }
 
     uint16_t readStatus() {
@@ -113,7 +115,9 @@ class UART {
     }
 
     uint16_t readRxData() {
-        if(Serial.available()) return Serial.getc();
+        _rxAvailable = false;
+        _then = false;
+        return _rxD;
     }
 
     uint16_t readRxClkDiv() {
@@ -133,6 +137,8 @@ class UART {
     bool _rxAvailable = false;
 
     bool _then = false;
+
+    int _rxD;
 
     uint16_t _rxClkDiv = 1;
     uint16_t _txClkDiv = 1;

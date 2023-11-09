@@ -26,10 +26,10 @@
 #BASE_HEX: 16
 #BASE_BIN: 2
 
-#UART_STATUS_REG:                   0xfff0
-#UART_DATA_REG:                     0xfff2
-#UART_RX_DIV_REG:                   0xfff4
-#UART_TX_DIV_REG:                   0xfff6
+#UART_STATUS_REG:                   0xffe0
+#UART_DATA_REG:                     0xffe2
+#UART_RX_DIV_REG:                   0xffe4
+#UART_TX_DIV_REG:                   0xffe6
 #UART_STATUS_BIT_RX_DATA_AVAILABLE: 0x0001
 #UART_STATUS_BIT_TX_ACTIVE:         0x0002
 #UART_STATUS_BIT_TX_DONE:           0x0004
@@ -131,6 +131,89 @@ _SYSCALL_UART_TX_BYTE_WAIT_READY:
     ST CHAR,UART_DATA_REG
     JP RL
 
+SYSCALL_UART_RX_BYTE:
+    ;  Return byte in RA
+    .ALIAS R1,UART_STATUS_REG
+    .ALIAS R2,UART_DATA_REG
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG
+
+_SYSCALL_UART_RX_BYTE_WAIT_READY:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_RX_BYTE_WAIT_READY
+    LD RA,UART_DATA_REG
+    JP RL
+
+SYSCALL_UART_READLINE:
+    ; ( bufaddr buflen -- status )
+    ; status = 0 : no data was available
+    ; status = 1 : data available
+    ; status = 2 : empty input
+    ; status = 3 : Ctl-C received during input
+    .ALIAS R0,UART_STATUS_REG
+    .ALIAS R1,UART_DATA_REG
+    .ALIAS R2,BUFPTR
+    .ALIAS R3,BUFLEN
+    .ALIAS R4,BUFEND
+    .ALIAS R5,RECEIVED
+    .ALIAS R6,STATUS
+    .ALIAS R7,BUFIDX
+
+    POP BUFLEN,SP           ; Length of the buffer
+    POP BUFPTR,SP
+    MOV BUFIDX,BUFPTR
+    MOV BUFEND,BUFPTR
+    ADDI BUFEND,2            ; Points to the location containing the address of the end of the buffer
+    ADDI BUFPTR,4          ; Where the actual characters are in the buffer
+    ST  BUFPTR,BUFIDX
+    MOVI RECEIVED,0
+
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG  
+
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+
+_SYSCALL_UART_READLINE_LOOP:
+    LD RA,UART_DATA_REG
+    CMPAI 0x03 ; Ctl-C?
+    JRI[Z] _SYSCALL_UART_READLINE_CTLC 
+
+    CMPAI 0x0a ; CR?
+    JRI[Z] _SYSCALL_UART_READLINE_READ 
+
+    PUSHR_B RA,BUFPTR
+    ADDI RECEIVED,1
+    SUBI BUFLEN,1
+    JRI[Z] _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_WAIT:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_WAIT
+    JRI _SYSCALL_UART_READLINE_LOOP
+
+_SYSCALL_UART_READLINE_READ:
+    ; Did we actually read something?
+    CMPI RECEIVED,0
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+    ; Store the end of the received data to BUFPTR
+    ST BUFPTR,BUFEND
+    MOVI STATUS,1
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_NONE:
+    MOVI STATUS,0
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_CTLC:
+    MOVI STATUS,0x03
+
+_SYSCALL_UART_READLINE_DONE:
+    PUSH STATUS,SP
+    JP RL
 
 SYSCALL_TYPE:
     ; ( addr -- )
@@ -346,13 +429,144 @@ _UD_DIV_CONT:
 _UD_DIV_DONE:
     JP RL
 
+INLINE:
+    PUSH RL,RS
+    LDI R0,%LBUF_IDX
+    LDI R1,#LBUF_LEN
+    PUSH R0,SP
+    PUSH R1,SP
+    JRIL SYSCALL_UART_READLINE
+    POP RL,RS
+    JP RL
 
+C_TO_I:
+    ; Attempt to convert the hex char in RA to a valid number
+    ; Return the number in RA, or -1 if no converted
+    CMPAI '0'
+    JRI[C] C_TO_I_INVALID
+    SUBAI '0'
+    CMPAI 10
+    JRI[NC] C_TO_I_GT_9
+    JP RL ; return the value
+C_TO_I_GT_9:
+    SUBAI 7 ; Put A at 10
+    CMPAI 10
+    JRI[C] C_TO_I_INVALID ; less than 'A'
+    CMPAI 16
+    JRI[NC] C_TO_I_LOWER_CASE ; greater than 'F'
+    JP RL ; return value
+C_TO_I_LOWER_CASE:
+    SUBAI 32
+    CMPAI 10
+    JRI[C] C_TO_I_INVALID
+    CMPAI 16
+    JRI[NC] C_TO_I_INVALID
+    JP RL
+C_TO_I_INVALID:
+    MOVAS -1
+    JP RL
+    
 
 COLD:
     ; test the syscalls
     ; Set up the stacks
     LDI SP,0x1000
     LDI RS,0x2000
+
+
+    LDI R0,MSG_HELLO
+    PUSH R0,SP
+    JPIL SYSCALL_TYPE
+    LDI R0,MSG_HELLO
+    PUSH R0,SP
+    JPIL SYSCALL_TYPE
+
+    ; Test digit conversion
+    MOVAI 0xff
+TDC_LOOP:
+    PUSH RA,SP
+    JRIL C_TO_I
+    MOV R0,RA
+    POP RA,SP
+    ; R0 - parsed
+    ; RA - char
+    ; Print val = char
+    ; RA . ASPACE EMIT R0 .
+    PUSH RA,SP
+    PUSH R0,SP
+    
+    MOVI R2,10 ; base
+    MOVI R3,0 ; unsigned
+
+    PUSH RA,SP
+    PUSH R2,SP
+    PUSH R3,SP
+    JRIL SYSCALL_DOT ; ( val base signed -- )
+
+    MOVAI ' '
+    JRIL SYSCALL_UART_TX_BYTE
+
+    MOVI R2,10 ; base
+    MOVI R3,0 ; unsigned
+
+    PUSH R2,SP
+    PUSH R3,SP
+    JRIL SYSCALL_DOT ; ( val base signed -- )
+
+    MOVAI 0x0a ; CR
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP RA,SP
+    SUBI RA,1
+    JRI[NZ] TDC_LOOP
+
+    HALT
+    
+
+JRIL SYSCALL_UART_RX_BYTE
+    JRIL SYSCALL_UART_RX_BYTE
+    
+LOOP:
+    JRIL INLINE
+LOOP_BRK:
+    POP R0,SP
+    CMPI R0,0
+    JRI[Z] LOOP
+    ; Now print the buffer char by char
+
+    LDI RA,%LBUF_IDX
+    LD R0,RA
+    LDI RA,%LBUF_END
+    LD R1,RA
+    MOV R2,R1
+    SUB R2,R0 ; number of bytes in the buffer to R2
+LOOP_PRINT_CHAR:
+    POP_B RA,R0
+    SUBI R2,1
+
+    PUSH R0,SP
+    PUSH R1,SP
+    PUSH R2,SP
+ 
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP R2,SP
+    POP R1,SP
+    POP R0,SP
+
+    CMPI R2,0
+    JRI[NZ] LOOP_PRINT_CHAR
+
+    HALT
+
+    ; Get and print a char
+    JRIL SYSCALL_UART_RX_BYTE
+    JRIL SYSCALL_UART_RX_BYTE
+    JRIL SYSCALL_UART_RX_BYTE
+    JRIL SYSCALL_UART_TX_BYTE
+    JRIL SYSCALL_UART_TX_BYTE
+
+    HALT
 
     LDI R0,MSG_HELLO
     PUSH R0,SP

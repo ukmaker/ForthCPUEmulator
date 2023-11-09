@@ -841,7 +841,7 @@ public:
                     return false;
                 }
                 if(tok->opcode->getJMPOp() == JMP_OP_JR || tok->opcode->getJMPOp() == JMP_OP_JRL) {
-                    tok->value = (sym->token->address - tok->address - 2);
+                    tok->value = (sym->token->address - tok->address);
                 }
                 
                 tok->symbolic = false;

@@ -405,12 +405,12 @@ public:
                     _pc = _ram->get(_regs[_argb(instr)]);
                     break;
                 case JMP_MODE_ABS_HERE:
-                    if(link) _regs[REG_RL] = _here + 2;
+                    if(link) _regs[REG_RL] = _here;
                     _pc = _ram->get(_pc);
                     break;
                 case JMP_MODE_REL_HERE:
-                    if(link) _regs[REG_RL] = _here + 2;
-                    _pc += _ram->get(_pc);
+                    if(link) _regs[REG_RL] = _here;
+                    _pc += _ram->get(_pc) - 2;
                     break;
             }
         } else {

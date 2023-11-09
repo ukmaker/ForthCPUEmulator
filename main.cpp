@@ -34,7 +34,7 @@ uint8_t rom[32];
 
 UART uart;
 
-UnsafeMemory mem(ram, 16384, 0, rom, 64, 16384, &uart, 0xfff0, 0xfff7);
+UnsafeMemory mem(ram, 16384, 0, rom, 64, 16384, &uart, 0xffe0, 0xffe7);
 
 
 ForthVM vm(&mem);
@@ -152,6 +152,26 @@ void generateCPP() {
   }
 }
 
+void generateMemFile() {
+  if(loaded) 
+  {
+    uint16_t romsize = vm.read(10);
+
+    Symbol *sym = fasm.getSymbol("#RAMSTART");
+    vm.ram()->put(10, sym->token->value);
+
+    dumper.writeMEM("ForthImage.mem", &fasm, &mem, 0, romsize, true);
+
+    sym = fasm.getSymbol("DICTIONARY_END");
+    vm.ram()->put(10, sym->token->address);
+
+  }
+  else
+  {
+    Serial.println("Image not loaded. Did you change the target?");
+  }
+}
+
 void prompt() {
   if(mode == MODE_ATMEGA) 
   { 
@@ -172,16 +192,19 @@ bool commandLine() {
     case 'A': modeAtmega328(); break;
     case 'G': generateCPP(); break;
     case 'S': modeSTM32(); break; 
+    case 'M': generateMemFile(); break;
     case 'c': vm.reset(); vm.run(); prompt(); break;
     case 'w': vm.warm();  vm.run(); prompt(); break;
     case 'l': loadInnerInterpreter(); break;
     case 'e': return false;
     case 'd': vm.warm();  while(debugger.commandLine()); prompt(); break;
+    case 'D': dumper.dump(&fasm); break;
     case '?': 
       Serial.println("Commands:");
       Serial.println("A - Set mode ATMEGA328");
       Serial.println("S - Set mode STM32");
       Serial.println("G - Generate ForthImage_xxx.h");
+      Serial.println("M - Generate ROM *.mem file");
       Serial.println("l - (Re)Load the minimal image");
       Serial.println("c - Cold start the Forth VM");
       Serial.println("w - Warm start the Forth VM");
