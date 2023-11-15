@@ -155,15 +155,15 @@ void generateCPP() {
 void generateMemFile() {
   if(loaded) 
   {
-    uint16_t romsize = vm.read(10);
+    uint16_t romsize = 8192; //vm.read(10);
 
-    Symbol *sym = fasm.getSymbol("#RAMSTART");
-    vm.ram()->put(10, sym->token->value);
+    //Symbol *sym = fasm.getSymbol("#RAMSTART");
+    //vm.ram()->put(10, sym->token->value);
 
     dumper.writeMEM("ForthImage.mem", &fasm, &mem, 0, romsize, true);
 
-    sym = fasm.getSymbol("DICTIONARY_END");
-    vm.ram()->put(10, sym->token->address);
+    //sym = fasm.getSymbol("DICTIONARY_END");
+    //vm.ram()->put(10, sym->token->address);
 
   }
   else

@@ -197,13 +197,47 @@ class Dumper {
         }
     }
 
+    void instructionJPU16(Assembler *fasm, Token *tok) {
+        if(tok->symbolic) {
+            printf("%s",tok->str);
+        } else {
+            printf("%04x",tok->value);
+        }
+    }
+
+    void instructionJRU16(Assembler *fasm, Token *tok) {
+        if(tok->symbolic) {
+            printf("%s",tok->str);
+        } else {
+            printf("%04x",tok->value);
+        }
+    }
+
+    void instructionJPRI(Assembler *fasm, Token *tok) {
+        // JP (Rb)
+        if(tok->symbolic) {
+            printf("(%s)", tok->str);
+        } else {
+            printf("(%s)",fasm->vocab.argname(tok->opcode->getArgB()));
+        }
+    }
+
+    void instructionJPRA(Assembler *fasm, Token *tok) {
+        // JP Rb
+        if(tok->symbolic) {
+            printf("%s", tok->str);
+        } else {
+            printf("%s",fasm->vocab.argname(tok->opcode->getArgB()));
+        }
+    }
+
     void printOpcode(Assembler *fasm, Token *tok) {
         if(tok == NULL || tok->opcode == NULL) {
             return;
         }
 
         printf("%s", tok->opcode->getName());
-        if(tok->opcode->isConditional()) {
+        if(tok->opcode->isJMP() && tok->opcode->isConditional()) {
             printf("[");
             if(tok->opcode->isConditionNegated()) {
                 printf("N");
@@ -270,7 +304,23 @@ class Dumper {
             }
 
         } else if(tok->opcode->isJMP()) {
+            switch(tok->opcode->getJMPMode()) {
+                case JMP_MODE_ABS_HERE:
+                    instructionJPU16(fasm, tok);
+                break;
 
+                case JMP_MODE_REL_HERE:
+                    instructionJRU16(fasm, tok);
+                break;
+
+                case JMP_MODE_IND_REG:
+                    instructionJPRI(fasm, tok);
+                break;
+
+                case JMP_MODE_ABS_REG:
+                    instructionJPRA(fasm, tok);
+                break;
+            }
         } else {
 
         }

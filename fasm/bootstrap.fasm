@@ -97,6 +97,8 @@
 %STATE: 2
 %FENCE: 2
 %TOKEN_HANDLER: 2      ; User-installable vector for a word to handle unknown tokens
+%TCHAR: 2              ; For testing - current char being converted to int
+
 %USER_TOP: 2
 USER_VARS:
 .DATA 0
@@ -104,7 +106,7 @@ USER_VARS:
 
 .ORG #SYSTEM ; Start vector is at address 0
 START:
-    JPI COLD
+    JPI TDC
 
 INT0:
     JPI INT0_HANDLER
@@ -234,14 +236,14 @@ SYSCALL_TYPE:
     ADDI ADDR,2 ; Point to first char
 _SYSCALL_TYPE_LOOP:
     POP_B CHAR,ADDR ; LD_B RA,(R0++)
-    PUSH R0,RS
-    PUSH R1,RS
+    PUSH ADDR,RS
+    PUSH LEN,RS
 
     JRIL SYSCALL_UART_TX_BYTE
 
-    POP R1,RS
-    POP R0,RS
-    SUBI R1,1
+    POP LEN,RS
+    POP ADDR,RS
+    SUBI LEN,1
     JRI[NZ] _SYSCALL_TYPE_LOOP
 
     POP RL,RS
@@ -291,7 +293,7 @@ SYSCALL_DOT:
     CMPAI 0x10  ; Base 16?
     JRI[Z] _SYSCALL_DOT_HEX
 
-    CMPAI 0 ; Signed?
+    CMPI SIGNED,0 ; Signed?
     JRI[NZ] _SYSCALL_DOT_SIGNED
 
     ; Print in unsigned decimal
@@ -470,8 +472,8 @@ C_TO_I_INVALID:
 COLD:
     ; test the syscalls
     ; Set up the stacks
-    LDI SP,0x1000
-    LDI RS,0x2000
+    LDI SP,#SPTOP
+    LDI RS,#RSTOP
 
 
     LDI R0,MSG_HELLO
@@ -481,50 +483,56 @@ COLD:
     PUSH R0,SP
     JPIL SYSCALL_TYPE
 
-    ; Test digit conversion
-    MOVAI 0xff
-TDC_LOOP:
-    PUSH RA,SP
-    JRIL C_TO_I
-    MOV R0,RA
-    POP RA,SP
-    ; R0 - parsed
-    ; RA - char
-    ; Print val = char
-    ; RA . ASPACE EMIT R0 .
-    PUSH RA,SP
-    PUSH R0,SP
+TDC:
+    ; Set up the stacks
+    LDI SP,#SPTOP
+    LDI RS,#RSTOP
+    ; Tests SYSCALL_DOT
+    ; ( val base signed -- )
+    ;MOVI R0,7
+    ;MOVI R1,10
+    ;MOVI R2,0
+    ;PUSH R0,SP
+    ;PUSH R1,SP
+    ;PUSH R2,SP
+    ;JRIL SYSCALL_DOT
     
-    MOVI R2,10 ; base
-    MOVI R3,0 ; unsigned
+    ; Test digit conversion
+    MOVAI 57
+    LDI RB,%TCHAR
+    ST  RA,RB
+TDC_LOOP:
 
+    LD RA,RB
+    MOVI R0,0
+    MOVI R1,10
     PUSH RA,SP
-    PUSH R2,SP
-    PUSH R3,SP
+    PUSH R1,SP
+    PUSH R0,SP
     JRIL SYSCALL_DOT ; ( val base signed -- )
-
     MOVAI ' '
     JRIL SYSCALL_UART_TX_BYTE
-
-    MOVI R2,10 ; base
-    MOVI R3,0 ; unsigned
-
-    PUSH R2,SP
-    PUSH R3,SP
-    JRIL SYSCALL_DOT ; ( val base signed -- )
+    LD RA,RB
+    JRIL C_TO_I
+    MOVI R0,1
+    MOVI R1,10
+    PUSH RA,SP
+    PUSH R1,SP
+    PUSH R0,SP
+   JRIL SYSCALL_DOT ; ( val base signed -- )
 
     MOVAI 0x0a ; CR
     JRIL SYSCALL_UART_TX_BYTE
 
-    POP RA,SP
+    LD RA,RB
     SUBI RA,1
+    ST RA,RB
     JRI[NZ] TDC_LOOP
 
     HALT
-    
 
 JRIL SYSCALL_UART_RX_BYTE
-    JRIL SYSCALL_UART_RX_BYTE
+JRIL SYSCALL_UART_RX_BYTE
     
 LOOP:
     JRIL INLINE

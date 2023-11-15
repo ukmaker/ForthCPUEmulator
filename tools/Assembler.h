@@ -777,7 +777,7 @@ public:
                 }
 
                 tok->opcode->setArgB(tok->value);
-                tok->symbolic = false;                    
+                //tok->symbolic = false;                    
 
             } else if(tok->opcode->expectsU8() || tok->opcode->expectsU8()) {
 
@@ -801,7 +801,7 @@ public:
 
                 tok->opcode->setArgA((tok->value & (0xf << 4)) >> 4);
                 tok->opcode->setArgB(tok->value);
-                tok->symbolic = false;
+                //tok->symbolic = false;
             } else if(tok->opcode->expectsU5()) {
                 // 5-bit immediate
                 sym = getSymbol(tok->str);
@@ -819,7 +819,7 @@ public:
                     return false;
                 }
                 tok->opcode->setU5(tok->value);
-                tok->symbolic = false;
+                //tok->symbolic = false;
             } else if(tok->opcode->expectsU16()) {
                 sym = getSymbol(tok->str);
                 if (sym->token == NULL)
@@ -844,7 +844,7 @@ public:
                     tok->value = (sym->token->address - tok->address);
                 }
                 
-                tok->symbolic = false;
+                //tok->symbolic = false;
             }
         }
 
