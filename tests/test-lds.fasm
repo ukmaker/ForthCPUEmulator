@@ -1,0 +1,9 @@
+; Test the various LD/ST options
+LD R0,R1
+LDI R0,R1
+POP R0,RS
+POP R0,SP
+LDX R0,RL + 15
+LDX R0,FP- 12
+LDX R0, SP  +7
+LDX R0, RS + 27

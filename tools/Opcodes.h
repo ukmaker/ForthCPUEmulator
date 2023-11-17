@@ -13,9 +13,6 @@ class Opcode {
     Opcode(const char *name, uint16_t code) :
         _name(name), _code(code), _isLdx(false), _isJmp(false), _isImmediate(false) {}
 
-    Opcode(const char *name, uint16_t code, bool isLdx) :
-        _name(name), _code(code), _isLdx(isLdx), _isJmp(false), _isImmediate(isLdx) {}
-
     Opcode(const char *name, uint16_t code, bool isLdx, bool isJmp) :
         _name(name), _code(code), _isLdx(isLdx), _isJmp(isJmp), _isImmediate(false) {}
 
@@ -51,9 +48,10 @@ class Opcode {
     static Opcode *ldxCode(const char *name, uint16_t op) {
         uint16_t opcode = 
             (GROUP_LDS << GROUP_BITS_POS)
-        +   (op << LDS_OP_BITS_POS);
+        +   (op << LDS_OP_BITS_POS)
+        +   (LDS_LDX_BIT);
 
-        return new Opcode(name, opcode, true);
+        return new Opcode(name, opcode);
     }
 
     static Opcode *jmpCode(const char *name, uint16_t mode, uint16_t link, bool imm = false) {
@@ -101,25 +99,15 @@ class Opcode {
     }
 
     bool isLDS() {
-        return getGroup() == GROUP_LDS;
+        return getGroup() == GROUP_LDS && ((_code & LDS_LDX_BIT) == 0);
     }
 
     bool isJMP() {
         return getGroup() == GROUP_JMP;
     }
 
-    bool isLdx() {
-        return _isLdx;
-    }
-
-    void setLdxModeAndOffset(uint16_t mode, uint16_t u5) {
-        _code |= (mode << LDS_MODE_BITS_POS);
-        _code |= (u5 & 0x000f);
-        _code |= (u5 & 0x0010) << (LDS_U5_BIT_POS - 4);
-    }
-
-    bool isJmp() {
-        return _isJmp;
+    bool isLDX() {
+        return getGroup() == GROUP_LDS && ((_code & LDS_LDX_BIT) == LDS_LDX_BIT);
     }
 
     void setJmpSkipAndCC(uint16_t skip, uint16_t cc) {
@@ -133,6 +121,10 @@ class Opcode {
 
     uint8_t getALUMode() {
         return (_code & ALU_MODE_BITS) >> ALU_MODE_BITS_POS;
+    }
+
+    uint8_t getLDXMode() {
+        return (_code & LDS_MODE_BITS) >> LDS_MODE_BITS_POS;
     }
 
     uint8_t getLDSMode() {
@@ -163,7 +155,8 @@ class Opcode {
         return 
             (isALU() && getALUMode() == ALU_MODE_REG_REG)
         |   (isALU() && getALUMode() == ALU_MODE_REG_U4)
-        |   isLDS();
+        |   isLDS()
+        |   isLDX();
     }
 
     bool expectsRb() {
@@ -171,10 +164,6 @@ class Opcode {
             (isALU() && getALUMode() == ALU_MODE_REG_REG)
         |   (isLDS() && getLDSMode() == LDS_MODE_REG_REG_INC)
         |   (isLDS() && getLDSMode() == LDS_MODE_REG_REG_DEC)
-        |   (isLDS() && getLDSMode() == LDS_MODE_REG_RL)
-        |   (isLDS() && getLDSMode() == LDS_MODE_REG_FP)
-        |   (isLDS() && getLDSMode() == LDS_MODE_REG_SP)
-        |   (isLDS() && getLDSMode() == LDS_MODE_REG_RS)
         |   (isJMP() && getJMPMode() == JMP_MODE_ABS_REG)
         |   (isJMP() && getJMPMode() == JMP_MODE_IND_REG);
     }
@@ -193,11 +182,7 @@ class Opcode {
     }
 
     bool expectsU5() {
-        return
-            (isLDS() && getJMPMode() == LDS_MODE_REG_RL)
-        |   (isLDS() && getJMPMode() == LDS_MODE_REG_FP)    
-        |   (isLDS() && getJMPMode() == LDS_MODE_REG_SP)    
-        |   (isLDS() && getJMPMode() == LDS_MODE_REG_RS);    
+        return isLDX(); 
     }
 
    bool expectsU8() {
@@ -304,8 +289,8 @@ class Opcodes {
 
             _ldsCodes("LD",   "LDI",   "POP",    "POPR",    LDS_OP_LD);
             _ldsCodes("LD_B", "LDI_B", "POP_B",  "POPR_B",  LDS_OP_LD_B);
-            _ldsCodes("ST",   "STI",   "PUSHR",  "PUSH",   LDS_OP_ST);
-            _ldsCodes("ST_B", "STI_B", "PUSHR_B","PUSH_B", LDS_OP_ST_B);
+            _ldsCodes("ST",   "STI",   "PUSHR",  "PUSH",    LDS_OP_ST);
+            _ldsCodes("ST_B", "STI_B", "PUSHR_B","PUSH_B",  LDS_OP_ST_B);
 
             _ldxCodes();
 
@@ -322,7 +307,7 @@ class Opcodes {
                     Opcode *clone = new Opcode(
                         op->getName(),
                         op->getCode(),
-                        op->isLdx(),
+                        op->isLDX(),
                         op->isJMP(),
                         op->isImmediate()
                     );
@@ -354,10 +339,10 @@ class Opcodes {
     }
 
     void _ldxCodes() {
-        opcodes[idx++] = Opcode::ldxCode("LDX",   LDS_OP_LD);
-        opcodes[idx++] = Opcode::ldxCode("LDX_B", LDS_OP_LD_B);
-        opcodes[idx++] = Opcode::ldxCode("STX",   LDS_OP_ST);
-        opcodes[idx++] = Opcode::ldxCode("STX_B", LDS_OP_ST_B);
+        opcodes[idx++] = Opcode::ldxCode("LDX",   LDX_OP_LDX);
+        opcodes[idx++] = Opcode::ldxCode("LDX_B", LDX_OP_LDX_B);
+        opcodes[idx++] = Opcode::ldxCode("STX",   LDX_OP_STX);
+        opcodes[idx++] = Opcode::ldxCode("STX_B", LDX_OP_STX_B);
     }
 
     void _jmpCodes() {

@@ -86,6 +86,7 @@ class Token {
     * length of a string
     */
     int value = 0; 
+    int offsetSign = 0;
     
     const char *str = NULL;
     const char *strB = NULL;

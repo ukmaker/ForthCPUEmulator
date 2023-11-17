@@ -143,6 +143,14 @@ public:
         return _sex(instr & 0xff);
     }
 
+    void _ldsx(uint16_t instr) {
+        if(instr & LDS_LDX_BIT) {
+            _ldx(instr);
+        } else {
+            _lds(instr);
+        }
+    }
+
     void _lds(uint16_t instr) {
         uint8_t op   = (instr & LDS_OP_BITS) >> LDS_OP_BITS_POS;
         uint8_t mode = (instr & LDS_MODE_BITS) >> LDS_MODE_BITS_POS;
@@ -189,29 +197,64 @@ public:
                 arga = _regs[rega];
                 argb = _regs[regb];
             break;
-            
-            case LDS_MODE_REG_RL:
+        }
+        switch(op)
+        {
+            case LDS_OP_LD:
+                _regs[rega] = _ram->get(argb);
+            break;
+
+            case LDS_OP_LD_B:
+                _regs[rega] = _ram->getC(argb);
+            break;
+
+            case LDS_OP_ST:
+                _ram->put(argb, arga);
+            break;
+
+            case LDS_OP_ST_B:
+                _ram->putC(argb, arga);
+            break;
+        }
+    }
+    void _ldx(uint16_t instr) {
+        uint8_t op   = (instr & LDS_OP_BITS) >> LDS_OP_BITS_POS;
+        uint8_t mode = (instr & LDS_MODE_BITS) >> LDS_MODE_BITS_POS;
+
+        uint8_t rega;
+        uint8_t regb;
+        uint16_t arga;
+        uint16_t argb;
+
+        bool byteMode = (op == LDS_OP_LD_B || op == LDS_OP_ST_B);
+        uint8_t delta = byteMode ? 1 : 2;
+
+        uint8_t U5 = _u5(instr);
+
+        switch(mode)
+        {          
+            case LDX_MODE_REG_RL:
                 rega = _arga(instr);
                 regb = _argb(instr);
                 arga = _regs[rega];
                 argb = _regs[REG_RL] + U5;
              break;
             
-            case LDS_MODE_REG_FP:
+            case LDX_MODE_REG_FP:
                 rega = _arga(instr);
                 regb = _argb(instr);
                 arga = _regs[rega];
                 argb = _regs[REG_FP] - U5;
             break;
             
-            case LDS_MODE_REG_SP:
+            case LDX_MODE_REG_SP:
                 rega = _arga(instr);
                 regb = _argb(instr);
                 arga = _regs[rega];
                 argb = _regs[REG_SP] + U5;
             break;
             
-            case LDS_MODE_REG_RS:
+            case LDX_MODE_REG_RS:
                 rega = _arga(instr);
                 regb = _argb(instr);
                 arga = _regs[rega];
@@ -450,7 +493,7 @@ public:
                 _gen(instr);
                 break;
             case GROUP_LDS:
-                _lds(instr);
+                _ldsx(instr);
                 break;
             case GROUP_ALU:
                 _alu(instr);

@@ -1,0 +1,217 @@
+
+#SYSTEM:   0x0000 ; System reset vector
+#RAMSTART: 0x2000 ; Dictionary grows from here
+#VARSTART: 0x3000 ; Variables grow up from here
+#SPTOP:    0x3800 ; Data stack pointer grows down from here
+#RSTOP:    0x3ffe ; And the return stack from here
+                  ; This gives both stacks 2K bytes
+#LBUF_LEN: 80     ; Maximum length of the line buffer in chars
+#BASE_DEC: 10
+#BASE_HEX: 16
+#BASE_BIN: 2
+
+.ORG #VARSTART
+%BASE: 2               ; Current system numeric base
+%LBUF_IDX: 2           ; Current line buffer byte pointer
+%LBUF_END: 2           ; Address of the last character in the buffer
+%LBUF_DATA: #LBUF_LEN  ; Line buffer data
+%DICTIONARY_POINTER: 2
+%CONTEXT: 2
+%CURRENT: 2
+%CORE: 2
+%MODE: 2
+%STATE: 2
+%FENCE: 2
+%TOKEN_HANDLER: 2      ; User-installable vector for a word to handle unknown tokens
+%USER_TOP: 2
+USER_VARS:
+.DATA 0
+
+
+.ORG #SYSTEM ; Start vector is at address 0
+START:
+    JPI COLD
+
+INT0:
+    JPI INT0_HANDLER
+INT1:
+    JPI INT1_HANDLER
+
+INT0_HANDLER:
+INT1_HANDLER:
+    HALT
+
+COLD:
+    ; Test the number conversion routine
+  LDI SP,#SPTOP
+  LDI RS,#RSTOP
+  ; Should return an error for an empty string
+  LDI RA,#RAMSTART   ; 
+  MOVI RB,0          ; length of the str  
+  ST RB,RA
+  PUSH RA,SP
+  JRIL SYSCALL_NUMBER
+  POP RA,SP          ; Should be 0
+  HALT
+
+
+SYSCALL_NUMBER:
+  ; Convert the token at the current DP to a number
+  ; Ignores the system BASE. Expects the number base to be specified
+  ; <no prefix> - decimal
+  ; 0x          - hex
+  ; 0b          - binary
+  ; a character literal may be represented
+  ;   'c'      - the trailing ' is not optional as in GForth
+  ;   '\n'     - backslashes are allowed for \n, \t, \r and \0
+  ;
+  ; ( dp -- number true ) | ( dp -- false )
+  .ALIAS R0,DP
+  .ALIAS R1,NUM
+  .ALIAS R2,BASE
+  .ALIAS RA,CHAR
+  .ALIAS R4,LEN
+  .ALIAS R5,SIGN
+
+  POP DP,SP
+  LD LEN,DP
+  ADDI DP,2
+  MOVI NUM,0
+  MOVI SIGN,0 ; Positive
+  ; Actually got something to parse?
+  CMPI LEN,0
+  JRI[Z] SYSCALL_NUMBER_FAILED
+  ; Yes we do
+  ; Length of 1 means it must be parsed as decimal
+  LD_B CHAR,DP
+  CMPI LEN,1
+  JRI[Z] SYSCALL_NUMBER_DECIMAL
+  ; Longer than 1
+  ; Is the first char a minus sign?
+  ; Is so, must be decimal
+  CMPI RA,'-'
+  JRI[NZ] SYSCALL_NUMBER_NOT_NEGATIVE
+  MOVI SIGN,1
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_DECIMAL
+SYSCALL_NUMBER_NOT_NEGATIVE:
+  CMPI RA,'\''
+  JRI[NZ] SYSCALL_NUMBER_NOT_LITERAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_LITERAL
+SYSCALL_NUMBER_NOT_LITERAL:
+  ; First char a '0' in which case check for a base
+  CMPI RA,'0'
+  JRI[NZ] SYSCALL_NUMBER_DECIMAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  ; check for valid bases (x or b)
+  CMPI CHAR,'x'
+  JRI[NZ] SYSCALL_NUMBER_NOT_HEX
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_HEX
+SYSCALL_NUMBER_NOT_HEX:
+  CMPI CHAR,'b'
+  JRI[NZ] SYSCALL_NUMBER_DECIMAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_BIN
+SYSCALL_NUMBER_DECIMAL:
+  ; We got here! It should be a decimal number
+  MOVI BASE,10
+  JRI SYSCALL_NUMBER_CONVERT
+SYSCALL_NUMBER_BIN:
+  MOVI BASE,2
+  JRI SYSCALL_NUMBER_CONVERT
+SYSCALL_NUMBER_HEX:
+  LDI BASE,16
+
+SYSCALL_NUMBER_CONVERT:
+  ; Current char to convert in CHAR, remaining length in LEN
+  MUL NUM,BASE
+  LD CHAR,DP
+  JRIL C_TO_I
+  JR[M] SYSCALL_NUMBER_FAILED
+  MOV RB,RA
+  ADDI RB,1
+  SUB BASE,RB
+  JR[C] SYSCALL_NUMBER_FAILED
+  ADD NUM,CHAR
+  ADDI DP,1
+  SUBI LEN,1
+  JRI[NZ] SYSCALL_NUMBER_CONVERT
+  ; We're done
+SYSCALL_NUMBER_DONE:
+  PUSH NUM,SP
+  MOVI R0,1
+  PUSH R0,SP
+  JP RL
+
+SYSCALL_NUMBER_LITERAL:
+  ; Allow for the following backslashed characters
+  ; \0
+  ; \n
+  ; \t
+  ; \r
+  ; \\
+  ; All other chars are converted directly
+  LD_B CHAR,DP
+  CMPAI '\\'
+  JR[NZ] SYSCALL_NUMBER_LITERAL_LIT
+  ADDI DP,1
+  SUBI LEN,1
+  JRI[Z] SYSCALL_NUMBER_FAILED ; nothing left to convert
+  ; Ok what was backslashed?
+  CMPAI '\\'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\\'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI '0'
+  JRI[NZ] SYSCALL_NUMBER_NOT_ZERO
+  MOVI NUM,0
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 'n'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\n'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 't'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\t'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 'r'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\r'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+
+SYSCALL_NUMBER_NOT_BACKSLASH:
+  ; Just grab the char at the DP
+  LD NUM,DP
+
+SYSCALL_NUMBER_LITERAL_LAST:
+  ; Does it end with a single quote?
+  ; if not we have a problem
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B RA,DP
+  CMPAI '\''
+  JRI[NZ] SYSCALL_NUMBER_FAILED
+  SUBI LEN,1
+  ; There should be nothing left
+  JRI[NZ] SYSCALL_NUMBER_FAILED
+  ; We're good
+  JRI SYSCALL_NUMBER_DONE
+
+SYSCALL_NUMBER_FAILED:
+  MOVI R0,0
+  PUSH R0,SP
+  JP RL
+
+

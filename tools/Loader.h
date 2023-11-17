@@ -29,19 +29,24 @@ class Loader {
             + (ldsMode << LDS_MODE_BITS_POS)
             + (arga << ARGA_BITS_POS)
             + (argb & 0x0f);
-        switch(ldsMode) {
-            case LDS_MODE_REG_HERE:
-                load(instruction);  
-                instruction = argb;
-                break;              
-            case LDS_MODE_REG_RL:
-            case LDS_MODE_REG_FP:
-            case LDS_MODE_REG_SP:
-            case LDS_MODE_REG_RS:
-                instruction += (argb & 0x10) << LDS_U5_BIT_POS;
-                break;
-            default: break;
+
+        if(ldsMode == LDS_MODE_REG_HERE) {
+            load(instruction);  
+            instruction = argb;
         }
+        load(instruction);
+    }
+
+    void loadLDX(uint16_t ldsOp, uint16_t ldxMode, uint16_t arga, uint16_t argb) {
+        uint16_t instruction = (GROUP_LDS << GROUP_BITS_POS)
+            + (ldsOp << LDS_OP_BITS_POS)
+            + (ldxMode << LDS_MODE_BITS_POS)
+            + (LDS_LDX_BIT)
+            + (arga << ARGA_BITS_POS)
+            + (argb & 0x0f);
+       
+        instruction += (argb & 0x10) << LDS_U5_BIT_POS;
+
         load(instruction);
     }
 

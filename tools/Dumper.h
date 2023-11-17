@@ -285,23 +285,10 @@ class Dumper {
                 case LDS_MODE_REG_REG_DEC:
                     instructionRR(fasm, tok);
                 break;
-
-                case LDS_MODE_REG_RL:
-                    instructionRR(fasm, tok);
-                break;
-
-                case LDS_MODE_REG_FP:
-                    instructionRR(fasm, tok);
-                break;
-
-                case LDS_MODE_REG_SP:
-                    instructionRR(fasm, tok);
-                break;
-
-                default: // LDS_MODE_REG_RS:
-                    instructionRR(fasm, tok);
-                break;
             }
+        } else if(tok->opcode->isLDX()) {
+            
+            instructionRR(fasm, tok);
 
         } else if(tok->opcode->isJMP()) {
             switch(tok->opcode->getJMPMode()) {

@@ -17,6 +17,7 @@
 #include "tests/SlurpTests.h"
 #include "tests/RangeTests.h"
 #include "tests/LabelTests.h"
+#include "tests/LDSTests.h"
 
 #define GENERATE_328P
 
@@ -49,6 +50,7 @@ VMTests vmTests(testSuite, &vm, &fasm, &loader);
 RangeTests rangeTests(testSuite, &vm, &fasm, &loader);
 LabelTests labelTests(testSuite, &vm, &fasm, &loader);
 SlurpTests slurpTests(testSuite, &vm, &fasm, &loader);
+LDSTests ldsTests(testSuite, &vm, &fasm, &loader);
 
 int tests = 0;
 int passed = 0;
@@ -103,7 +105,7 @@ bool loadInnerInterpreter()
 {
 
   setMode();
-  fasm.slurp("fasm/bootstrap.fasm");
+  fasm.slurp("fasm/core.fasm");
   fasm.pass1();
   fasm.pass2();
   fasm.pass3();
@@ -119,7 +121,12 @@ bool loadInnerInterpreter()
     loaded = true;
   }
 
-  return !fasm.hasErrors();
+  if(fasm.hasErrors()) {
+    printf("Assembly errors:\n");
+    printf("Phase 1 - %s\n", fasm.phase1Error ? "FAILED" : "OK");
+    printf("Phase 2 - %s\n", fasm.phase2Error ? "FAILED" : "OK");
+    printf("Phase 3 - %s\n", fasm.phase3Error ? "FAILED" : "OK");
+  }
 }
 
 void generateCPP() {
@@ -223,30 +230,21 @@ int main(int argc, char **argv)
   rangeTests.run();
   labelTests.run();
   slurpTests.run();
+  ldsTests.run();
 
-  if (loadInnerInterpreter())
-  {
+  debugger.setAssembler(&fasm);
+  debugger.setVM(&vm);
+  debugger.reset();
 
-    debugger.setAssembler(&fasm);
-    debugger.setVM(&vm);
-    debugger.reset();
-
-    // ram.setWatch(0x5d4);
-    debugger.setShowForthWordsOnly();
-    debugger.setVerbose(true);
-    // debugger.setBump(10);
-    // debugger.writeProtect("DICTIONARY_END");
-    //debugger.run();
-    prompt();
-    while(commandLine()) ;
-  }
-  else
-  {
-    printf("Assembly errors - exiting\n");
-    printf("Phase 1 - %s\n", fasm.phase1Error ? "FAILED" : "OK");
-    printf("Phase 2 - %s\n", fasm.phase2Error ? "FAILED" : "OK");
-    printf("Phase 3 - %s\n", fasm.phase3Error ? "FAILED" : "OK");
-  }
+  // ram.setWatch(0x5d4);
+  debugger.setShowForthWordsOnly();
+  debugger.setVerbose(true);
+  // debugger.setBump(10);
+  // debugger.writeProtect("DICTIONARY_END");
+  //debugger.run();
+  prompt();
+  while(commandLine()) ;
+  
 
   return 0;
 }

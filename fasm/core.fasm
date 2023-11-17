@@ -93,38 +93,528 @@ USER_VARS:
 
 .ORG #SYSTEM ; Start vector is at address 0
 START:
-  JPI COLD
+    JPI COLD
 
 INT0:
-  JPI INT0_HANDLER
+    JPI INT0_HANDLER
 INT1:
-  JPI INT1_HANDLER
-
-WARM:
-  JPI STAR_RESTART
+    JPI INT1_HANDLER
 
 SYSCALLS:
+
+SYSCALL_UART_TX_BYTE:
+    ; ( RA=byte )
+    .ALIAS R1,UART_STATUS_REG
+    .ALIAS R2,UART_DATA_REG
+    .ALIAS R0,CHAR
+
+    MOV CHAR,RA
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG
+
+_SYSCALL_UART_TX_BYTE_WAIT_READY:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_TX_DONE
+    JRI[Z] _SYSCALL_UART_TX_BYTE_WAIT_READY
+
+    ST CHAR,UART_DATA_REG
+    JP RL
+
+SYSCALL_UART_RX_BYTE:
+    ;  Return byte in RA
+    .ALIAS R1,UART_STATUS_REG
+    .ALIAS R2,UART_DATA_REG
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG
+
+_SYSCALL_UART_RX_BYTE_WAIT_READY:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_RX_BYTE_WAIT_READY
+    LD RA,UART_DATA_REG
+    JP RL
+
+SYSCALL_UART_READLINE:
+    ; ( bufaddr buflen -- status )
+    ; status = 0 : no data was available
+    ; status = 1 : data available
+    ; status = 2 : empty input
+    ; status = 3 : Ctl-C received during input
+    .ALIAS R0,UART_STATUS_REG
+    .ALIAS R1,UART_DATA_REG
+    .ALIAS R2,BUFPTR
+    .ALIAS R3,BUFLEN
+    .ALIAS R4,BUFEND
+    .ALIAS R5,RECEIVED
+    .ALIAS R6,STATUS
+    .ALIAS R7,BUFIDX
+
+    POP BUFLEN,SP           ; Length of the buffer
+    POP BUFPTR,SP
+    MOV BUFIDX,BUFPTR
+    MOV BUFEND,BUFPTR
+    ADDI BUFEND,2            ; Points to the location containing the address of the end of the buffer
+    ADDI BUFPTR,4          ; Where the actual characters are in the buffer
+    ST  BUFPTR,BUFIDX
+    MOVI RECEIVED,0
+
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG  
+
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+
+_SYSCALL_UART_READLINE_LOOP:
+    LD RA,UART_DATA_REG
+    CMPAI 0x03 ; Ctl-C?
+    JRI[Z] _SYSCALL_UART_READLINE_CTLC 
+
+    CMPAI 0x0a ; CR?
+    JRI[Z] _SYSCALL_UART_READLINE_READ 
+
+    PUSHR_B RA,BUFPTR
+    ADDI RECEIVED,1
+    SUBI BUFLEN,1
+    JRI[Z] _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_WAIT:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_WAIT
+    JRI _SYSCALL_UART_READLINE_LOOP
+
+_SYSCALL_UART_READLINE_READ:
+    ; Did we actually read something?
+    CMPI RECEIVED,0
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+    ; Store the end of the received data to BUFPTR
+    ST BUFPTR,BUFEND
+    MOVI STATUS,1
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_NONE:
+    MOVI STATUS,0
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_CTLC:
+    MOVI STATUS,0x03
+
+_SYSCALL_UART_READLINE_DONE:
+    PUSH STATUS,SP
+    JP RL
+
 SYSCALL_TYPE:
-  ; Got here from a JL, so preserve RL
-  ; TOS SP is the address of the string
-  ; First word is the length
-  ; Use R0 as the address, R1 as the length, R2 as the char to write
-  ; Save to RS to start
-  PUSH RS,R0
-  PUSH RS,R1
-  PUSH RS,R2
-  POP SP,R0
-  LD R1,R0
-  ADDI R0,2 ; Point to first char
-SYSCALL_TYPE_LOOP:
-  POPR_B R2,R0 ; LD_B R2,(R0++)
-  STI_B R2,0xFFF2 ; write to the UART
-  SUBI R1,1
-  JRI[NZ] SYSCALL_TYPE_LOOP
-  POP RS,R2
-  POP RS,R1
-  POP RS,R0
+    ; ( addr -- )
+    ; Print a FORTH String
+    ; Got here from a JL, so preserve RL
+    ; TOS SP is the address of the string
+    ; First word of the string is the length
+    ; Use R0 as the address, R1 as the length, R2 as the char to write
+    ; Save to RS to start
+    .ALIAS R0,ADDR
+    .ALIAS R1,LEN
+    .ALIAS RA,CHAR
+
+    PUSH RL,RS
+
+    POP ADDR,SP
+    LD LEN,ADDR
+    ADDI ADDR,2 ; Point to first char
+_SYSCALL_TYPE_LOOP:
+    POP_B CHAR,ADDR ; LD_B RA,(R0++)
+    PUSH ADDR,RS
+    PUSH LEN,RS
+
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP LEN,RS
+    POP ADDR,RS
+    SUBI LEN,1
+    JRI[NZ] _SYSCALL_TYPE_LOOP
+
+    POP RL,RS
+    JP RL
+
+SYSCALL_TYPELN:
+    PUSH RL,RS
+    JRIL SYSCALL_TYPE
+    JRIL SYSCALL_CRET
+    POP RL,RS
+    JP RL
+
+SYSCALL_CRET:
+
+    PUSH RL,RS
+
+    MOVI RA,0x0d ; CR
+    JRIL SYSCALL_UART_TX_BYTE
+    
+    MOVI RA,0x0a ; LF
+    JRIL SYSCALL_UART_TX_BYTE
+
+    POP RL,RS
+    JP RL
+
+SYSCALL_DOT:
+    ; (val base signed -- )
+    .ALIAS R0,VAL
+    .ALIAS R1,BASE
+    .ALIAS R2,SIGNED
+    .ALIAS R3,DIGIT
+    .ALIAS R4,IDX
+    .ALIAS R5,MASK
+
+    ; Save registers
+    PUSH RL,RS
+
+    POP SIGNED,SP
+    POP BASE,SP
+    POP VAL,SP
+
+    MOV RA,BASE
+
+    CMPAI 2     ; Base 2?
+    JRI[Z] _SYSCALL_DOT_BINARY
+
+    CMPAI 0x10  ; Base 16?
+    JRI[Z] _SYSCALL_DOT_HEX
+
+    CMPI SIGNED,0 ; Signed?
+    JRI[NZ] _SYSCALL_DOT_SIGNED
+
+    ; Print in unsigned decimal
+    JRI _SYSCALL_DOT_UNSIGNED
+
+_SYSCALL_DOT_SIGNED:
+    ; is the value negative?
+    BITI VAL,15
+    JRI[Z] _SYSCALL_DOT_UNSIGNED
+    ; Yes, so emit a minus sign and make it positive
+    PUSH VAL,RS
+    LDI RA,'-'
+    JRIL SYSCALL_UART_TX_BYTE
+    POP DIGIT,RS
+    MOVI VAL,0
+    SUB VAL,DIGIT ; Make positive
+
+_SYSCALL_DOT_UNSIGNED:
+    ; keep dividing by ten and pushing the remainder to the stack until there is nothing left
+    ; {R1,R0} contains the input
+    ; R2 contains 10
+    ; Result is in R0, R1 is remainder
+    MOVI DIGIT,0 ; Keep track of the number of digits
+_SYSCALL_DOT_UNSIGNED_LOOP:
+    MOVI R1,0
+    MOVI R2,10
+
+    PUSH DIGIT,RS
+    JRIL UD_DIV
+    POP DIGIT,RS
+
+    ADDI DIGIT,1
+    MOV RA,R1
+    ADDAI '0'
+    PUSH RA,SP
+    CMPI R0,0
+    JRI[NZ] _SYSCALL_DOT_UNSIGNED_LOOP
+    ; Now print out the digits
+_SYSCALL_DOT_UNSIGNED_PRINT_LOOP:
+    PUSH DIGIT,RS
+    POP RA,SP
+    JRIL SYSCALL_UART_TX_BYTE
+    POP DIGIT,RS
+    SUBI DIGIT,1
+    JRI[NZ] _SYSCALL_DOT_UNSIGNED_PRINT_LOOP
+
+    JRI _SYSCALL_DOT_RETURN
+
+; Print in binary
+_SYSCALL_DOT_BINARY:
+    LDI IDX,0x10
+_SYSCALL_DOT_BINARY_LOOP:
+    SLI VAL,1
+    JRI[C] _SYSCALL_DOT_BINARY_ONE
+    PUSH VAL,RS
+    PUSH IDX,RS
+    MOVAI '0'
+    JRI _SYSCALL_DOT_BINARY_TX
+_SYSCALL_DOT_BINARY_ONE:
+    MOVAI '1'
+_SYSCALL_DOT_BINARY_TX:
+    JRIL SYSCALL_UART_TX_BYTE
+    POP IDX,RS
+    POP VAL,RS
+    SUBI IDX,1
+    JRI[NZ] _SYSCALL_DOT_BINARY_LOOP
+    JRI _SYSCALL_DOT_RETURN
+
+_SYSCALL_DOT_HEX:
+    LDI IDX,4
+_SYSCALL_DOT_HEX_LOOP:
+    LDI RA,0xf000
+    AND RA,VAL
+    SRI RA,12
+    PUSH VAL,RS
+    PUSH IDX,RS
+    JRIL _SYSCALL_DOT_HEXDIGIT
+    POP IDX,RS
+    POP VAL,RS
+    SLI  VAL,4
+    SUBI IDX,1
+    JRI[NZ] _SYSCALL_DOT_HEX_LOOP
+    JRI _SYSCALL_DOT_RETURN
+
+_SYSCALL_DOT_RETURN:
+    ; Restore registers
+    POP RL,RS
+    JP RL
+
+_SYSCALL_DOT_HEXDIGIT:
+    ; ( RA=digit )
+    PUSH RL,RS
+    CMPAI 0x0a
+    JRI[NC] _SYSCALL_DOT_HEXDIGIT_GT9
+    ; 0-9
+    ADDAI '0'
+    JRI _SYSCALL_DOT_HEXDIGIT_OUT
+_SYSCALL_DOT_HEXDIGIT_GT9:
+    SUBAI 0x0a
+    ADDAI 'a'
+_SYSCALL_DOT_HEXDIGIT_OUT:
+    JRIL SYSCALL_UART_TX_BYTE
+    POP RL,RS
+    JP RL
+
+UD_DIV: 
+    ; Internal routine passes args and results in registers
+    ; Unsigned double division
+    ;   - {R1,R0} are 24-bit dividend
+    ;   - R2 is 8-bit quotient
+    ; Returns
+    ;   - R0 contains 16-bit quotient
+    ;   - R1 contains 8-bit remainder
+    ; Destroys
+    ;   - RA
+    ;
+    ;
+    MOVAI 0x10 ; 16-bits to work on
+_UD_DIV_LOOP:
+    ADD R1,R1
+    ADD R0,R0
+    JRI[NC] _UD_DIV_LOOP_1
+    ; Increment the MSB
+    ADDI R1,1
+_UD_DIV_LOOP_1:
+    SUB R1,R2
+    JRI[M] _UD_DIV_SKIP ; 
+    ADDI R0,1 ; Set low bit
+    JRI _UD_DIV_CONT
+_UD_DIV_SKIP:
+    ADD R1,R2
+_UD_DIV_CONT:
+    SUBI RA,1
+    JRI[NZ] _UD_DIV_LOOP
+_UD_DIV_DONE:
+    JP RL
+
+INLINE:
+    PUSH RL,RS
+    LDI R0,%LBUF_IDX
+    LDI R1,#LBUF_LEN
+    PUSH R0,SP
+    PUSH R1,SP
+    JRIL SYSCALL_UART_READLINE
+    POP RL,RS
+    JP RL
+
+C_TO_I:
+    ; Attempt to convert the hex char in RA to a valid number
+    ; Return the number in RA, or -1 if no converted
+    ; Only affects RA
+    CMPAI '0'
+    JRI[C] C_TO_I_INVALID
+    SUBAI '0'
+    CMPAI 10
+    JRI[NC] C_TO_I_GT_9
+    JP RL ; return the value
+C_TO_I_GT_9:
+    SUBAI 7 ; Put A at 10
+    CMPAI 10
+    JRI[C] C_TO_I_INVALID ; less than 'A'
+    CMPAI 16
+    JRI[NC] C_TO_I_LOWER_CASE ; greater than 'F'
+    JP RL ; return value
+C_TO_I_LOWER_CASE:
+    SUBAI 32
+    CMPAI 10
+    JRI[C] C_TO_I_INVALID
+    CMPAI 16
+    JRI[NC] C_TO_I_INVALID
+    JP RL
+C_TO_I_INVALID:
+    MOVAS -1
+    JP RL
+
+SYSCALL_NUMBER:
+  ; Convert the token at the current DP to a number
+  ; Ignores the system BASE. Expects the number base to be specified
+  ; <no prefix> - decimal
+  ; 0x          - hex
+  ; 0b          - binary
+  ; a character literal may be represented
+  ;   'c'      - the trailing ' is not optional as in GForth
+  ;   '\n'     - backslashes are allowed for \n, \t, \r and \0
+  ;
+  ; ( dp -- number true ) | ( dp -- false )
+  .ALIAS R0,DP
+  .ALIAS R1,NUM
+  .ALIAS R2,BASE
+  .ALIAS RA,CHAR
+  .ALIAS R4,LEN
+  .ALIAS R5,SIGN
+
+  POP DP,SP
+  LD LEN,DP
+  ADDI DP,2
+  MOVI NUM,0
+  MOVI SIGN,0 ; Positive
+  ; Actually got something to parse?
+  CMPI LEN,0
+  JRI[Z] SYSCALL_NUMBER_FAILED
+  ; Yes we do
+  ; Length of 1 means it must be parsed as decimal
+  LD_B CHAR,DP
+  CMPI LEN,1
+  JRI[Z] SYSCALL_NUMBER_DECIMAL
+  ; Longer than 1
+  ; Is the first char a minus sign?
+  ; Is so, must be decimal
+  CMPI RA,'-'
+  JRI[NZ] SYSCALL_NUMBER_NOT_NEGATIVE
+  MOVI SIGN,1
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_DECIMAL
+SYSCALL_NUMBER_NOT_NEGATIVE:
+  CMPI RA,'\''
+  JRI[NZ] SYSCALL_NUMBER_NOT_LITERAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_LITERAL
+SYSCALL_NUMBER_NOT_LITERAL:
+  ; First char a '0' in which case check for a base
+  CMPI RA,'0'
+  JRI[NZ] SYSCALL_NUMBER_DECIMAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  ; check for valid bases (x or b)
+  CMPI CHAR,'x'
+  JRI[NZ] SYSCALL_NUMBER_NOT_HEX
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_HEX
+SYSCALL_NUMBER_NOT_HEX:
+  CMPI CHAR,'b'
+  JRI[NZ] SYSCALL_NUMBER_DECIMAL
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B CHAR,DP
+  JRI SYSCALL_NUMBER_BIN
+SYSCALL_NUMBER_DECIMAL:
+  ; We got here! It should be a decimal number
+  MOVI BASE,10
+  JRI SYSCALL_NUMBER_CONVERT
+SYSCALL_NUMBER_BIN:
+  MOVI BASE,2
+  JRI SYSCALL_NUMBER_CONVERT
+SYSCALL_NUMBER_HEX:
+  LDI BASE,16
+
+SYSCALL_NUMBER_CONVERT:
+  ; Current char to convert in CHAR, remaining length in LEN
+  MUL NUM,BASE
+  LD CHAR,DP
+  JRIL C_TO_I
+  JR[M] SYSCALL_NUMBER_FAILED
+  MOV RB,RA
+  ADDI RB,1
+  SUB BASE,RB
+  JR[C] SYSCALL_NUMBER_FAILED
+  ADD NUM,CHAR
+  ADDI DP,1
+  SUBI LEN,1
+  JRI[NZ] SYSCALL_NUMBER_CONVERT
+  ; We're done
+SYSCALL_NUMBER_DONE:
+  PUSH NUM,SP
+  MOVI R0,1
+  PUSH R0,SP
   JP RL
+
+SYSCALL_NUMBER_LITERAL:
+  ; Allow for the following backslashed characters
+  ; \0
+  ; \n
+  ; \t
+  ; \r
+  ; \\
+  ; All other chars are converted directly
+  LD_B CHAR,DP
+  CMPAI '\\'
+  JR[NZ] SYSCALL_NUMBER_LITERAL_LIT
+  ADDI DP,1
+  SUBI LEN,1
+  JRI[Z] SYSCALL_NUMBER_FAILED ; nothing left to convert
+  ; Ok what was backslashed?
+  CMPAI '\\'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\\'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI '0'
+  JRI[NZ] SYSCALL_NUMBER_NOT_ZERO
+  MOVI NUM,0
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 'n'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\n'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 't'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\t'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+  CMPAI 'r'
+  JRI[NZ] SYSCALL_NUMBER_NOT_BACKSLASH
+  LDI NUM,'\r'
+  JRI SYSCALL_NUMBER_LITERAL_LAST
+
+SYSCALL_NUMBER_NOT_BACKSLASH:
+  ; Just grab the char at the DP
+  LD NUM,DP
+
+SYSCALL_NUMBER_LITERAL_LAST:
+  ; Does it end with a single quote?
+  ; if not we have a problem
+  ADDI DP,1
+  SUBI LEN,1
+  LD_B RA,DP
+  CMPAI '\''
+  JRI[NZ] SYSCALL_NUMBER_FAILED
+  SUBI LEN,1
+  ; There should be nothing left
+  JRI[NZ] SYSCALL_NUMBER_FAILED
+  ; We're good
+  JRI SYSCALL_NUMBER_DONE
+
+SYSCALL_NUMBER_FAILED:
+  MOVI R0,0
+  PUSH R0,SP
+  JP RL
+
 
 CORE_PATCH_VOCABULARY:
   .DATA CORE_VOCABULARY ; Points to the end of the vocabulary on a cold start
@@ -137,62 +627,62 @@ CORE_PATCH_FENCE:
   .DATA FENCE           ; 
 
 COLD:
-  LDI A,CORE_PATCH_DP
-  LD A,A                ; Address of the cold-boot end of the dictionary
-  LDI B,%DICTIONARY_POINTER
-  ST B,A
+  LDI RA,CORE_PATCH_DP
+  LD RA,RA                ; Address of the cold-boot end of the dictionary
+  LDI RB,%DICTIONARY_POINTER
+  ST RA,RB
 
-  LDI A,CORE_PATCH_VOCABULARY
-  LD A,A
-  LDI B,%CORE
-  ST B,A
+  LDI RA,CORE_PATCH_VOCABULARY
+  LD RA,RA
+  LDI RB,%CORE
+  ST RA,RB
 
-  LDI A,%CURRENT
-  ST A,B
-  LDI A,%CONTEXT
-  ST A,B
+  LDI RA,%CURRENT
+  ST RB,RA
+  LDI RA,%CONTEXT
+  ST RB,RA
 
-  LDI A,CORE_PATCH_FENCE ; At cold-start, FENCE is FENCE (!)
-  LD A,A
-  LDI B,%FENCE
-  ST B,A
+  LDI RA,CORE_PATCH_FENCE ; At cold-start, FENCE is FENCE (!)
+  LD RA,RA
+  LDI RB,%FENCE
+  ST RA,RB
 
-  LDI A,%USER_TOP
-  LDI B,USER_VARS
-  ST A,B
+  LDI RA,%USER_TOP
+  LDI RB,USER_VARS
+  ST RB,RA
 
-  LDI A,%TOKEN_HANDLER
-  MOVI B,0
-  ST A,B
+  LDI RA,%TOKEN_HANDLER
+  MOVI RB,0
+  ST RB,RA
 
 STAR_RESTART: ; Restart from here if a runtime error occurs
   LDI SP,#SPTOP
   LDI RS,#RSTOP
 
   ; Set LBUF_END to LBUF_DATA
-  LDI A,%LBUF_DATA
-  LDI B,%LBUF_END
-  ST B,A
+  LDI RA,%LBUF_DATA
+  LDI RB,%LBUF_END
+  ST RA,RB
 
   ; Start with BASE set to HEX
-  LDI A,#BASE_HEX
-  LDI B,%BASE
-  ST B,A
+  LDI RA,#BASE_HEX
+  LDI RB,%BASE
+  ST RA,RB
 
   ; Execute mode
-  LDI A,#MODE_EXECUTE
-  LDI B,%MODE
-  ST B,A
+  LDI RA,#MODE_EXECUTE
+  LDI RB,%MODE
+  ST RA,RB
 
-  LDI A,#STATE_NOT_FOUND
-  LDI B,%STATE
-  ST B,A
+  LDI RA,#STATE_NOT_FOUND
+  LDI RB,%STATE
+  ST RA,RB
 
-  LDI A,0x0a
-  LDI B,%BASE
-  ST B,A
+  LDI RA,0x0a
+  LDI RB,%BASE
+  ST RA,RB
 
-  LDI I,OUTER_CA
+  LDI RI,OUTER_CA
   JPI NEXT
 
 ; Beginning of the inner interpreter
@@ -203,9 +693,9 @@ STAR_COLON_WA: .DATA STAR_COLON_CA
 STAR_COLON_CA:
 COLON: 
   PUSH RS,FP
-  PUSH RS,I
+  PUSH RS,RI
   MOV FP,RS ; Frame pointer
-  MOV I,WA
+  MOV RI,WA
   JRI NEXT
 STAR_SEMI:
   .N "*;"
@@ -213,15 +703,15 @@ STAR_SEMI:
 STAR_SEMI_WA: .DATA STAR_SEMI_CA ; I.e. the address of the next word
 STAR_SEMI_CA:
   MOV RS,FP
-  POP RS,I
-  POP RS,FP
+  POP RI,RS
+  POP FP,RS
 NEXT:
-  LD WA,I ; WA <- (I)
-  ADDI I,2
+  LD WA,RI ; WA <- (I)
+  ADDI RI,2
 RUN:
-  LD A,WA
+  LD RA,WA
   ADDI WA,2
-  JP A
+  JP RA
 
 MESSAGES: ; SYSTEM MESSAGES LIVE HERE
 MSG_HELLO:          .DATA 23 .SDATA "Hello! I'm a TIL :-) >>"
@@ -240,8 +730,8 @@ BIT_PASSIVE:
   .DATA STAR_SEMI
 BIT_PASSIVE_WA: .DATA BIT_PASSIVE_CA
 BIT_PASSIVE_CA:
-  LDI A,#HEADER_PASSIVE
-  PUSH SP,A
+  LDI RA,#HEADER_PASSIVE
+  PUSH RA,SP
   JPI NEXT
 
 BIT_IMMEDIATE:
@@ -249,8 +739,8 @@ BIT_IMMEDIATE:
   .DATA BIT_PASSIVE
 BIT_IMMEDIATE_WA: .DATA BIT_IMMEDIATE_CA
 BIT_IMMEDIATE_CA:
-  LDI A,#HEADER_IMMEDIATE
-  PUSH SP,A
+  LDI RA,#HEADER_IMMEDIATE
+  PUSH RA,SP
   JPI NEXT
 
 BIT_RUNTIME:
@@ -258,8 +748,8 @@ BIT_RUNTIME:
   .DATA BIT_IMMEDIATE
 BIT_RUNTIME_WA: .DATA BIT_RUNTIME_CA
 BIT_RUNTIME_CA:
-  LDI A,#HEADER_RUNTIME
-  PUSH SP,A
+  LDI RA,#HEADER_RUNTIME
+  PUSH RA,SP
   JPI NEXT
 
 BIT_EXECUTIVE:
@@ -267,8 +757,8 @@ BIT_EXECUTIVE:
   .DATA BIT_RUNTIME
 BIT_EXECUTIVE_WA: .DATA BIT_EXECUTIVE_CA
 BIT_EXECUTIVE_CA:
-  LDI A,#HEADER_EXECUTIVE
-  PUSH SP,A
+  LDI RA,#HEADER_EXECUTIVE
+  PUSH RA,SP
   JPI NEXT
 
 BIT_COMPILETIME:
@@ -276,8 +766,8 @@ BIT_COMPILETIME:
   .DATA BIT_EXECUTIVE
 BIT_COMPILETIME_WA: .DATA BIT_COMPILETIME_CA
 BIT_COMPILETIME_CA:
-  LDI A,#HEADER_COMPILETIME
-  PUSH SP,A
+  LDI RA,#HEADER_COMPILETIME
+  PUSH RA,SP
   JPI NEXT
 
 BIT_HAS_LOCALS:
@@ -285,8 +775,8 @@ BIT_HAS_LOCALS:
   .DATA BIT_COMPILETIME
 BIT_HAS_LOCALS_WA: .DATA BIT_HAS_LOCALS_CA
 BIT_HAS_LOCALS_CA:
-  LDI A,#HEADER_HAS_LOCALS
-  PUSH SP,A
+  LDI RA,#HEADER_HAS_LOCALS
+  PUSH RA,SP
   JPI NEXT
 
 WORDLEN:
@@ -295,11 +785,11 @@ WORDLEN:
   .DATA BIT_HAS_LOCALS
 WORDLEN_WA: .DATA WORDLEN_CA
 WORDLEN_CA:
-  LDI A,#HEADER_MASK
-  POP SP,B
-  LD B,B
-  AND B,A
-  PUSH SP,B
+  LDI RA,#HEADER_MASK
+  POP RB,SP
+  LD RB,RB
+  AND RB,RA
+  PUSH RB,SP
   JPI NEXT
 
 SCODE:
@@ -415,12 +905,12 @@ DOES_CA:
   .DATA STORE_WA
   .DATA SCODE_WA
 
-  PUSH RS,FP
-  PUSH RS,I
+  PUSH FP,RS
+  PUSH RI,RS
   MOV FP,RS ; Frame pointer
-  LD I,WA
+  LD RI,WA
   ADDI WA,2
-  PUSH SP,WA
+  PUSH WA,SP
   JPI NEXT
 
 CONSTANT:
@@ -432,8 +922,8 @@ CONSTANT_CA:
   .DATA CREATE_WA
   .DATA COMMA_WA
   .DATA SCODE_WA
-  LD A,WA
-  PUSH SP,A 
+  LD RA,WA
+  PUSH RA,SP 
   JPI NEXT
 
 VARIABLE:
@@ -454,8 +944,8 @@ CONST_NEXT:
   .DATA VARIABLE
 CONST_NEXT_WA: .DATA CONST_NEXT_CA
 CONST_NEXT_CA:
-  LDI A,NEXT
-  PUSH SP,A
+  LDI RA,NEXT
+  PUSH RA,SP
   JPI NEXT
 
 SPTOP:
@@ -463,8 +953,8 @@ SPTOP:
   .DATA CONST_NEXT
 SPTOP_WA: .DATA SPTOP_CA
 SPTOP_CA:
-  LDI A,#SPTOP
-  PUSH SP,A
+  LDI RA,#SPTOP
+  PUSH RA,SP
   JPI NEXT
 
 RSTOP:
@@ -472,8 +962,8 @@ RSTOP:
   .DATA SPTOP
 RSTOP_WA: .DATA RSTOP_CA
 RSTOP_CA:
-  LDI A,#RSTOP
-  PUSH SP,A
+  LDI RA,#RSTOP
+  PUSH RA,SP
   JPI NEXT
 
 VAR_USER_TOP:
@@ -481,8 +971,8 @@ VAR_USER_TOP:
   .DATA RSTOP
 VAR_USER_TOP_WA: .DATA VAR_USER_TOP_CA
 VAR_USER_TOP_CA:
-  LDI A,%USER_TOP
-  PUSH SP,A
+  LDI RA,%USER_TOP
+  PUSH RA,SP
   JPI NEXT
 
 VAR_LBUF_IDX:
@@ -490,8 +980,8 @@ VAR_LBUF_IDX:
   .DATA VAR_USER_TOP
 VAR_LBUF_IDX_WA: .DATA VAR_LBUF_IDX_CA
 VAR_LBUF_IDX_CA:
-  LDI A,%LBUF_IDX
-  PUSH SP,A
+  LDI RA,%LBUF_IDX
+  PUSH RA,SP
   JPI NEXT
 
 VAR_TOKEN_HANDLER:
@@ -499,8 +989,8 @@ VAR_TOKEN_HANDLER:
   .DATA VAR_LBUF_IDX
 VAR_TOKEN_HANDLER_WA: .DATA VAR_TOKEN_HANDLER_CA
 VAR_TOKEN_HANDLER_CA:
-  LDI A,%TOKEN_HANDLER
-  PUSH SP,A
+  LDI RA,%TOKEN_HANDLER
+  PUSH RA,SP
   JPI NEXT
 
 Q_TOKEN_HANDLER:
@@ -526,15 +1016,15 @@ STAR_TOKEN_HANDLER:
   .DATA Q_TOKEN_HANDLER
 STAR_TOKEN_HANDLER_WA: .DATA STAR_TOKEN_HANDLER_CA
 STAR_TOKEN_HANDLER_CA:
-  LDI A,%TOKEN_HANDLER
-  LD A,A
-  CMPI A,0
+  LDI RA,%TOKEN_HANDLER
+  LD RA,RA
+  CMPI RA,0
   JRI[Z] STAR_TOKEN_HANDLER_NONE
-  MOV WA,A
+  MOV WA,RA
   JPI RUN
 STAR_TOKEN_HANDLER_NONE:
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 IMMEDIATE:
@@ -542,13 +1032,13 @@ IMMEDIATE:
   .DATA STAR_TOKEN_HANDLER
 IMMEDIATE_WA: .DATA IMMEDIATE_CA
 IMMEDIATE_CA:
-  LDI A,%CURRENT
-  LD B,A ; point to vocab
-  LD B,B ; point to word
-  LD A,B ; get the word length
+  LDI RA,%CURRENT
+  LD RB,RA ; point to vocab
+  LD RB,RB ; point to word
+  LD RA,RB ; get the word length
   LDI R0,#HEADER_IMMEDIATE
-  OR A,R0 ; Set the immediate bit
-  ST B,A
+  OR RA,R0 ; Set the immediate bit
+  ST RA,RB
   JPI NEXT
 
 RUNTIME:
@@ -556,13 +1046,13 @@ RUNTIME:
   .DATA IMMEDIATE
 RUNTIME_WA: .DATA RUNTIME_CA
 RUNTIME_CA:
-  LDI A,%CURRENT
-  LD B,A ; point to vocab
-  LD B,B ; point to word
-  LD A,B ; get the word length
+  LDI RA,%CURRENT
+  LD RB,RA ; point to vocab
+  LD RB,RB ; point to word
+  LD RA,RB ; get the word length
   LDI R0,#HEADER_RUNTIME
-  OR A,R0 ; Set the runtime bit
-  ST B,A
+  OR RA,R0 ; Set the runtime bit
+  ST RA,RB
   JPI NEXT
 
 
@@ -571,13 +1061,13 @@ EXECUTIVE:
   .DATA RUNTIME
 EXECUTIVE_WA: .DATA EXECUTIVE_CA
 EXECUTIVE_CA:
-  LDI A,%CURRENT
-  LD B,A ; point to vocab
-  LD B,B ; point to word
-  LD A,B ; get the word length
+  LDI RA,%CURRENT
+  LD RB,RA ; point to vocab
+  LD RB,RB ; point to word
+  LD RA,RB ; get the word length
   LDI R0,#HEADER_EXECUTIVE
-  OR A,R0 ; Set the immediate and runtime bits
-  ST B,A
+  OR RA,R0 ; Set the immediate and runtime bits
+  ST RA,RB
   JPI NEXT
 
 VOCABULARY:
@@ -603,9 +1093,9 @@ CORE:   ; My definition. Should really be as defined using VOCABULARY
   .DATA VOCABULARY
 CORE_WA: .DATA CORE_CA
 CORE_CA:
-  LDI A,%CORE
-  LDI B,%CONTEXT
-  ST B,A
+  LDI RA,%CORE
+  LDI RB,%CONTEXT
+  ST RA,RB
   JPI NEXT
 
 STAR_LIT:
@@ -613,25 +1103,17 @@ STAR_LIT:
   .DATA CORE
 STAR_LIT_WA: .DATA STAR_LIT_CA
 STAR_LIT_CA:
-  LD A,I ; Length to A
-  PUSH SP,I
-  SYSCALL #SYSCALL_TYPE
-  ADD I,A
-  ADDI I,3
-  CLRI I,0 ; Word align
-  JPI NEXT
-
-DEBUG:
-  .N "DEBUG"
-  .DATA STAR_LIT
-DEBUG_WA: .DATA DEBUG_CA
-DEBUG_CA:
-  SYSCALL #SYSCALL_DEBUG 
+  LD RA,RI ; Length to A
+  PUSH RI,SP
+  JRIL SYSCALL_TYPE
+  ADD RI,RA
+  ADDI RI,3
+  CLRI RI,0 ; Word align
   JPI NEXT
 
 RESTART:
   .N "RESTART"
-  .DATA DEBUG
+  .DATA STAR_LIT
 RESTART_WA: .DATA STAR_RESTART
 
 ; Test the stacks for underflow
@@ -645,16 +1127,16 @@ STAR_STACK_CA:
   SUB R0,SP
   JRI[NC] STAR_STACK_CHECK_RS
   LDI SP,#SPTOP
-  LDI A,MSG_SP_UNDERFLOW
-  PUSH SP,A
-  SYSCALL #SYSCALL_TYPELN
+  LDI RA,MSG_SP_UNDERFLOW
+  PUSH RA,SP
+  JRIL SYSCALL_TYPELN
 STAR_STACK_CHECK_RS:
   LDI R0,#RSTOP
   SUB R0,RS
   JRI[NC] STAR_STACK_OK
-  LDI A,MSG_RS_UNDERFLOW    
-  PUSH SP,A
-  SYSCALL #SYSCALL_TYPELN
+  LDI RA,MSG_RS_UNDERFLOW    
+  PUSH RA,SP
+  JRIL SYSCALL_TYPELN
   JPI STAR_RESTART
 STAR_STACK_OK:
   JPI NEXT
@@ -665,7 +1147,7 @@ TYPE:
 TYPE_WA:
   .DATA TYPE_CA    ; This is the word address of TYPE
 TYPE_CA:             ; The Code address
-  SYSCALL #SYSCALL_TYPE
+  JRIL SYSCALL_TYPE
   JPI NEXT
 
 TYPELN:
@@ -674,7 +1156,7 @@ TYPELN:
 TYPELN_WA:
   .DATA TYPELN_CA    ; This is the word address of TYPE
 TYPELN_CA:             ; The Code address
-  SYSCALL #SYSCALL_TYPELN
+  JRIL SYSCALL_TYPELN
   JPI NEXT
 
 EMIT:
@@ -682,7 +1164,8 @@ EMIT:
   .DATA TYPELN
 EMIT_WA: .DATA EMIT_CA
 EMIT_CA:
-  SYSCALL #SYSCALL_PUTC
+  POP RA,SP
+  JRIL SYSCALL_UART_TX_BYTE
   JPI NEXT
 
 MESSAGE: ; Print a system message ( n -- )
@@ -690,20 +1173,20 @@ MESSAGE: ; Print a system message ( n -- )
   .DATA EMIT
 MESSAGE_WA: .DATA MESSAGE_CA
 MESSAGE_CA:
-  POP SP,A                ; Message number n in A (0-based)
-  LDI B,MESSAGES       ; B holds the message address
+  POP RA,SP                ; Message number n in A (0-based)
+  LDI RB,MESSAGES       ; B holds the message address
 MESSAGE_LOOP:
-  AND A,A               ; Is this the message we're looking for?
+  AND RA,RA               ; Is this the message we're looking for?
   JRI[Z] MESSAGE_FOUND
-  LD R0,B               ; Get the length of the message
-  ADD B,R0              ; Add to the address
-  ADDI B,3
-  CLRI B,0               ; Word-align
-  ADDI A,-1             ; Decrement A
+  LD R0,RB               ; Get the length of the message
+  ADD RB,R0              ; Add to the address
+  ADDI RB,3
+  CLRI RB,0               ; Word-align
+  SUBI RA,1             ; Decrement A
   JRI MESSAGE_LOOP
 MESSAGE_FOUND:
-  PUSH SP,B               ; Message address to the stack
-  SYSCALL #SYSCALL_TYPE
+  PUSH RB,SP              ; Message address to the stack
+  JRIL SYSCALL_TYPE
   JPI NEXT
 
 Q_PRINTABLE:
@@ -723,12 +1206,12 @@ DOT:  ; The Forth word "." to print the value on the top of the stack
 DOT_WA:
   .DATA DOT_CA
 DOT_CA:
-  LDI A,%BASE
-  LD B,A     ; Current base in B
-  PUSH SP,B      ; Push it to the stack
-  MOVI A,1
-  PUSH SP,A
-  SYSCALL #SYSCALL_DOT
+  LDI RA,%BASE
+  LD RB,RA     ; Current base in B
+  PUSH RB,SP      ; Push it to the stack
+  MOVI RA,1
+  PUSH RA,SP
+  JRIL SYSCALL_DOT
   JPI NEXT
 
 DOT_U:  ; The Forth word "." to print the unsigned value on the top of the stack
@@ -737,12 +1220,12 @@ DOT_U:  ; The Forth word "." to print the unsigned value on the top of the stack
 DOT_U_WA:
   .DATA DOT_U_CA
 DOT_U_CA:
-  LDI A,%BASE
-  LD B,A     ; Current base in B
-  PUSH SP,B    ; Push it to the stack
-  MOVI A,0
-  PUSH SP,A
-  SYSCALL #SYSCALL_DOT
+  LDI RA,%BASE
+  LD RB,RA     ; Current base in B
+  PUSH RB,SP   ; Push it to the stack
+  MOVI RA,0
+  PUSH RA,SP
+  JRIL SYSCALL_DOT
   JPI NEXT
 
 DOT_C:  ; The Forth word ".C" to print the value on the top of the stack
@@ -751,10 +1234,15 @@ DOT_C:  ; The Forth word ".C" to print the value on the top of the stack
 DOT_C_WA:
   .DATA DOT_C_CA
 DOT_C_CA:
-  LDI A,%BASE
-  LD B,A     ; Current base in B
-  PUSH SP,B      ; Push it to the stack
-  SYSCALL #SYSCALL_DOT_C
+  POP RA,SP
+  ANDAI 0xff
+  PUSH RA,SP
+  LDI RA,%BASE
+  LD RB,RA     ; Current base in B
+  PUSH RB,SP   ; Push it to the stack
+  MOVI RA,0
+  PUSH RA,SP   ; unsigned
+  JRIL SYSCALL_DOT
   JPI NEXT
 
 DOT_Q_C:
@@ -783,8 +1271,8 @@ MODE:
 MODE_WA:
   .DATA MODE_CA
 MODE_CA:
-  LDI A,%MODE
-  PUSH SP,A
+  LDI RA,%MODE
+  PUSH RA,SP
   JPI NEXT
 
 BASE:
@@ -792,8 +1280,8 @@ BASE:
   .DATA MODE
 BASE_WA: .DATA BASE_CA
 BASE_CA:
-  LDI A,%BASE
-  PUSH SP,A
+  LDI RA,%BASE
+  PUSH RA,SP
   JPI NEXT
 
 HEX:
@@ -801,9 +1289,9 @@ HEX:
   .DATA BASE
 HEX_WA: .DATA HEX_CA
 HEX_CA:
-  LDI A,%BASE
-  MOVBI 0x10
-  ST A,B
+  LDI RB,0x10
+  LDI RA,%BASE
+  ST RB,RA
   JPI NEXT
 
 DECIMAL:
@@ -811,9 +1299,9 @@ DECIMAL:
   .DATA HEX
 DECIMAL_WA: .DATA DECIMAL_CA
 DECIMAL_CA:
-  LDI A,%BASE
-  MOVBI 10
-  ST A,B
+  LDI RA,%BASE
+  MOVI RB,10
+  ST RB,RA
   JPI NEXT
 
 BINARY:
@@ -821,9 +1309,9 @@ BINARY:
   .DATA DECIMAL
 BINARY_WA: .DATA BINARY_CA
 BINARY_CA:
-  LDI A,%BASE
-  MOVBI 2
-  ST A,B
+  LDI RA,%BASE
+  MOVI RB,2
+  ST RB,RA
   JPI NEXT
 
 AT:
@@ -832,9 +1320,9 @@ AT:
 AT_WA:
   .DATA AT_CA
 AT_CA:
-  POP SP,A
-  LD A,A
-  PUSH SP,A
+  POP RA,SP
+  LD RA,RA
+  PUSH RA,SP
   JPI NEXT
 
 C_AT:
@@ -843,11 +1331,11 @@ C_AT:
 C_AT_WA:
   .DATA C_AT_CA
 C_AT_CA:
-  POP SP,A
-  LD B,A
-  LDI A,0xff
-  AND B,A
-  PUSH SP,B
+  POP RA,SP
+  LD RB,RA
+  LDI RA,0xff
+  AND RB,RA
+  PUSH RB,SP
   JPI NEXT
 
 STORE:
@@ -856,168 +1344,21 @@ STORE:
 STORE_WA:
   .DATA STORE_CA
 STORE_CA:
-  POP SP,A
-  POP SP,B
-  ST A,B
-  JPI NEXT
-
-H_AT:
-  .N "H@"
-  .DATA STORE
-H_AT_WA: .DATA H_AT_CA
-H_AT_CA:
-  SYSCALL #SYSCALL_H_AT
-  JPI NEXT
-
-H_STORE:
-  .N "H!"
-  .DATA H_AT
-H_STORE_WA: .DATA H_STORE_CA
-H_STORE_CA:
-  SYSCALL #SYSCALL_H_STORE
-  JPI NEXT
-
-D_AT:
-  .N "D@"
-  .DATA H_STORE
-D_AT_WA: .DATA D_AT_CA
-D_AT_CA:
-  ; ( address -- double-data )
-  POP SP,R0 ; Address
-  LD R1,R0 ; Low word
-  ADDI R0,2
-  LD R2,R0
-  PUSH SP,R1
-  PUSH SP,R2
-  JPI NEXT
-
-D_STORE:
-  .N "D!"
-  .DATA D_AT
-D_STORE_WA: .DATA D_STORE_CA
-D_STORE_CA:
-; ( double-data address -- )
-  POP SP,R0 ; address
-  POP SP,R1 ; DH
-  POP SP,R2 ; DL 
-  ST R0,R2
-  ADDI R0,2
-  ST R0,R1
-  JPI NEXT
-
-D_ADD:
-  .N "D+"
-  .DATA D_STORE
-D_ADD_WA: .DATA D_ADD_CA
-D_ADD_CA:
-  SYSCALL #SYSCALL_D_ADD
-  JPI NEXT
-
-
-D_AND:
-  .N "DAND"
-  .DATA D_ADD
-D_AND_WA: .DATA D_AND_CA
-D_AND_CA:
-  SYSCALL #SYSCALL_D_AND
-  JPI NEXT
-
-
-D_OR:
-  .N "DOR"
-  .DATA D_AND
-D_OR_WA: .DATA D_OR_CA
-D_OR_CA:
-  SYSCALL #SYSCALL_D_OR
-  JPI NEXT
-
-
-D_INVERT:
-  .N "DINVERT"
-  .DATA D_OR
-D_INVERT_WA: .DATA D_INVERT_CA
-D_INVERT_CA:
-  SYSCALL #SYSCALL_D_INVERT
-  JPI NEXT
-
-D_SUB:
-  .N "D-"
-  .DATA D_INVERT
-D_SUB_WA: .DATA D_SUB_CA
-D_SUB_CA:
-  SYSCALL #SYSCALL_D_SUB
-  JPI NEXT
-
-D_MUL:
-  .N "D*"
-  .DATA D_SUB
-D_MUL_WA: .DATA D_MUL_CA
-D_MUL_CA:
-  SYSCALL #SYSCALL_D_MUL
-  JPI NEXT
-
-D_DIV:
-  .N "D/"
-  .DATA D_MUL
-D_DIV_WA: .DATA D_DIV_CA
-D_DIV_CA:
-  SYSCALL #SYSCALL_D_DIV
-  JPI NEXT
-
-D_SR:
-  .N "D>>"
-  .DATA D_DIV
-D_SR_WA: .DATA D_SR_CA
-D_SR_CA:
-  SYSCALL #SYSCALL_D_SR
-  JPI NEXT
-
-D_SL:
-  .N "D<<"
-  .DATA D_SR
-D_SL_WA: .DATA D_SL_CA
-D_SL_CA:
-  SYSCALL #SYSCALL_D_SL
-  JPI NEXT
-
-D_SWAP:
-  .N "DSWAP"
-  .DATA D_SL
-D_SWAP_WA: .DATA D_SWAP_CA
-D_SWAP_CA:
-  POP SP,R0 ; H1
-  POP SP,R1 ; L1
-  POP SP,R2 ; H2
-  POP SP,R3 ; L2
-  PUSH SP,R1 ; L1
-  PUSH SP,R0 ; L1 H1
-  PUSH SP,R3 ; L1 H1 L2
-  PUSH SP,R2 ; L1 H1 L2 H2
-  JPI NEXT
-
-D_DUP:
-  .N "DDUP"
-  .DATA D_SWAP
-D_DUP_WA: .DATA D_DUP_CA
-D_DUP_CA:
-  POP SP,R0 ; H1
-  POP SP,R1 ; L1
-  PUSH SP,R1 ; L1
-  PUSH SP,R0 ; L1 H1
-  PUSH SP,R1 ; L1
-  PUSH SP,R0 ; L1 H1
+  POP RA,SP
+  POP RB,SP
+  ST RB,RA
   JPI NEXT
 
 PLUS:
   .N "+"
-  .DATA D_DUP
+  .DATA STORE
 PLUS_WA: 
   .DATA PLUS_CA
 PLUS_CA:
-  POP SP,A
-  POP SP,B
-  ADD A,B
-  PUSH SP,A
+  POP RA,SP
+  POP RB,SP
+  ADD RA,RB
+  PUSH RA,SP
   JPI NEXT
 
 PLUS_STORE:
@@ -1025,11 +1366,11 @@ PLUS_STORE:
   .DATA PLUS
 PLUS_STORE_WA: .DATA PLUS_STORE_CA
 PLUS_STORE_CA:
-  POP SP,A
-  POP SP,B
-  LD R0,A
-  ADD R0,B
-  ST A,R0
+  POP RA,SP
+  POP RB,SP
+  LD R0,RA
+  ADD R0,RB
+  ST R0,RA
   JPI NEXT
 
 MINUS:
@@ -1038,10 +1379,10 @@ MINUS:
 MINUS_WA: 
   .DATA MINUS_CA
 MINUS_CA:
-  POP SP,A
-  POP SP,B
-  SUB B,A
-  PUSH SP,B
+  POP RA,SP
+  POP RB,SP
+  SUB RB,RA
+  PUSH RB,SP
   JPI NEXT
 
 TIMES:
@@ -1050,10 +1391,10 @@ TIMES:
 TIMES_WA: 
   .DATA TIMES_CA
 TIMES_CA:
-  POP SP,A
-  POP SP,B
-  MUL B,A
-  PUSH SP,B
+  POP RA,SP
+  POP RB,SP
+  MUL RB,RA
+  PUSH RB,SP
   JPI NEXT
 
 DIV:
@@ -1062,10 +1403,11 @@ DIV:
 DIV_WA: 
   .DATA DIV_CA
 DIV_CA:
-  POP SP,A
-  POP SP,B
-  DIV B,A
-  PUSH SP,B
+  POP R2,SP
+  POP R0,SP
+  MOVI R1,0
+  JRIL UD_DIV
+  PUSH R0,SP
   JPI NEXT
 
 AND:
@@ -1074,10 +1416,10 @@ AND:
 AND_WA: 
   .DATA AND_CA
 AND_CA:
-  POP SP,A
-  POP SP,B
-  AND B,A
-  PUSH SP,B
+  POP RA,SP
+  POP RB,SP
+  AND RB,RA
+  PUSH RB,SP
   JPI NEXT
 
 OR:
@@ -1085,10 +1427,10 @@ OR:
   .DATA AND
 OR_WA: .DATA OR_CA
 OR_CA:
-  POP SP,A
-  POP SP,B
-  OR A,B
-  PUSH SP,A
+  POP RA,SP
+  POP RB,SP
+  OR RA,RB
+  PUSH RA,SP
   JPI NEXT
 
 NOT:
@@ -1096,15 +1438,15 @@ NOT:
   .DATA OR
 NOT_WA: .DATA NOT_CA
 NOT_CA:
-  POP SP,A
-  CMPI A,0
+  POP RA,SP
+  CMPI RA,0
   JRI[Z] NOT_IS_ZERO
-  MOVI A,0 ; invert
-  PUSH SP,A
+  MOVI RA,0 ; invert
+  PUSH RA,SP
   JPI NEXT
 NOT_IS_ZERO:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 INVERT:
@@ -1112,9 +1454,9 @@ INVERT:
   .DATA NOT
 INVERT_WA: .DATA INVERT_CA
 INVERT_CA:
-  POP SP,A
-  NOT A,A
-  PUSH SP,A
+  POP RA,SP
+  XOR RA,RA
+  PUSH RA,SP
   JPI NEXT
 
 EQUALS:
@@ -1122,16 +1464,16 @@ EQUALS:
   .DATA INVERT
 EQUALS_WA: .DATA EQUALS_CA
 EQUALS_CA:
-  POP SP,A
-  POP SP,B
-  CMP A,B
+  POP RA,SP
+  POP RB,SP
+  CMP RA,RB
   JRI[NZ] EQUALS_FALSE
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 EQUALS_FALSE:
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 NOT_EQUALS:
@@ -1139,16 +1481,16 @@ NOT_EQUALS:
   .DATA EQUALS
 NOT_EQUALS_WA: .DATA NOT_EQUALS_CA
 NOT_EQUALS_CA:
-  POP SP,A
-  POP SP,B
-  CMP A,B
+  POP RA,SP
+  POP RB,SP
+  CMP RA,RB
   JRI[NZ] NOT_EQUALS_TRUE
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 NOT_EQUALS_TRUE:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 ; The comparison operators all assume signed arguments
@@ -1158,20 +1500,20 @@ GT:
   .DATA NOT_EQUALS
 GT_WA: .DATA GT_CA
 GT_CA:
-  POP SP,B
-  POP SP,A
+  POP RB,SP
+  POP RA,SP
 GT_CMP:
-  CMP B,A
+  CMP RB,RA
   JRI[NP] GT_GLE
   JRI[Z] GT_GLE
   ; A is <= B
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 GT_GLE:
   ; A is <= B
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 GTE:
@@ -1179,18 +1521,18 @@ GTE:
   .DATA GT
 GTE_WA: .DATA GTE_CA
 GTE_CA:
-  POP SP,B
-  POP SP,A
+  POP RB,SP
+  POP RA,SP
 GTE_CMP:
-  CMP A,B
+  CMP RA,RB
   JRI[P] GTE_LT
   ; A is < B
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 GTE_LT:
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 ; Default less-than works for signed numbers
@@ -1199,16 +1541,16 @@ LT:
   .DATA GTE
 LT_WA: .DATA LT_CA
 LT_CA:
-  POP SP,B
-  POP SP,A
-  CMP A,B
+  POP RB,SP
+  POP RA,SP
+  CMP RA,RB
   JRI[P] LT_LT
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 LT_LT:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 LTE:
@@ -1216,17 +1558,17 @@ LTE:
   .DATA LT
 LTE_WA: .DATA LTE_CA
 LTE_CA:
-  POP SP,B
-  POP SP,A
-  CMP A,B
+  POP RB,SP
+  POP RA,SP
+  CMP RA,RB
   JRI[P] LTE_LTE
   JRI[Z] LTE_LTE
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 LTE_LTE:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 
@@ -1236,16 +1578,16 @@ ULT:
   .DATA LTE
 ULT_WA: .DATA ULT_CA
 ULT_CA:
-  POP SP,B
-  POP SP,A
-  CMP A,B
+  POP RB,SP
+  POP RA,SP
+  CMP RA,RB
   JRI[C] ULT_TRUE
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 ULT_TRUE:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT  
 
 ; Unsigned comparisons
@@ -1254,16 +1596,16 @@ UGT:
   .DATA ULT
 UGT_WA: .DATA UGT_CA
 UGT_CA:
-  POP SP,A
-  POP SP,B
-  CMP A,B
+  POP RA,SP
+  POP RB,SP
+  CMP RA,RB
   JRI[C] UGT_TRUE
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 UGT_TRUE:
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT  
 
 BETWEEN:
@@ -1276,19 +1618,19 @@ BETWEEN_CA:
   .ALIAS R0,LE
   .ALIAS R1,GE
   .ALIAS R2,VAL
-  POP SP,LE
-  POP SP,GE
-  POP SP,VAL
+  POP LE,SP
+  POP GE,SP
+  POP VAL,SP
   CMP VAL,LE
   JRI[P] NOT_BETWEEN
   CMP GE,VAL
   JRI[P] NOT_BETWEEN
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 NOT_BETWEEN:
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 WITHIN:
@@ -1300,21 +1642,21 @@ WITHIN_CA:
   .ALIAS R0,LE
   .ALIAS R1,GE
   .ALIAS R2,VAL
-  POP SP,LE
-  POP SP,GE
-  POP SP,VAL
+  POP LE,SP
+  POP GE,SP
+  POP VAL,SP
   CMP VAL,LE
   JRI[P] NOT_WITHIN
   JRI[Z] NOT_WITHIN
   CMP GE,VAL
   JRI[P] NOT_WITHIN
   JRI[Z] NOT_WITHIN
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 NOT_WITHIN:
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 
@@ -1324,13 +1666,13 @@ ZERO_EQUALS:
   .DATA WITHIN
 ZERO_EQUALS_WA: .DATA ZERO_EQUALS_CA
 ZERO_EQUALS_CA:
-  POP SP,A
-  CMPI A,0
-  MOVI B,1
+  POP RA,SP
+  CMPI RA,0
+  MOVI RB,1
   JRI[Z] ZERO_EQUALS_TRUE
-  MOVI B,0
+  MOVI RB,0
 ZERO_EQUALS_TRUE:
-  PUSH SP,B
+  PUSH RB,SP
   JPI NEXT
 
 ONE_EQUALS:
@@ -1338,13 +1680,13 @@ ONE_EQUALS:
   .DATA ZERO_EQUALS
 ONE_EQUALS_WA: .DATA ONE_EQUALS_CA
 ONE_EQUALS_CA:
-  POP SP,A
-  CMPI A,1
-  MOVI B,1
+  POP RA,SP
+  CMPI RA,1
+  MOVI RB,1
   JRI[Z] ONE_EQUALS_TRUE
-  MOVI B,0
+  MOVI RB,0
 ONE_EQUALS_TRUE:
-  PUSH SP,B
+  PUSH RB,SP
   JPI NEXT
 
 TWO_EQUALS:
@@ -1352,13 +1694,13 @@ TWO_EQUALS:
   .DATA ONE_EQUALS
 TWO_EQUALS_WA: .DATA TWO_EQUALS_CA
 TWO_EQUALS_CA:
-  POP SP,A
-  CMPI A,2
-  MOVI B,1
+  POP RA,SP
+  CMPI RA,2
+  MOVI RB,1
   JRI[Z] TWO_EQUALS_TRUE
-  MOVI B,0
+  MOVI RB,0
 TWO_EQUALS_TRUE:
-  PUSH SP,B
+  PUSH RB,SP
   JPI NEXT
 
 SL:
@@ -1366,10 +1708,10 @@ SL:
   .DATA TWO_EQUALS
 SL_WA: .DATA SL_CA
 SL_CA:
-  POP SP,B
-  POP SP,A
-  SL A,B
-  PUSH SP,A
+  POP RB,SP
+  POP RA,SP
+  SL RA,RB
+  PUSH RA,SP
   JPI NEXT
 
 SR:
@@ -1377,10 +1719,10 @@ SR:
   .DATA SL
 SR_WA: .DATA SR_CA
 SR_CA:
-  POP SP,B
-  POP SP,A
-  SR A,B
-  PUSH SP,A
+  POP RB,SP
+  POP RA,SP
+  SR RA,RB
+  PUSH RA,SP
   JPI NEXT
 
 SL_ONE:
@@ -1388,9 +1730,9 @@ SL_ONE:
   .DATA SR
 SL_ONE_WA: .DATA SL_ONE_CA
 SL_ONE_CA:
-  POP SP,A
-  SLI A,1
-  PUSH SP,A
+  POP RA,SP
+  SLI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 SR_ONE:
@@ -1398,9 +1740,9 @@ SR_ONE:
   .DATA SL_ONE
 SR_ONE_WA: .DATA SR_ONE_CA
 SR_ONE_CA:
-  POP SP,A
-  SRI A,1
-  PUSH SP,A
+  POP RA,SP
+  SRI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 ALIGN:
@@ -1409,10 +1751,10 @@ ALIGN:
 ALIGN_WA:
   .DATA ALIGN_CA
 ALIGN_CA:
-  POP SP,A
-  ADDI A,1
-  CLRI A,0
-  PUSH SP,A
+  POP RA,SP
+  ADDI RA,1
+  CLRI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 DUP:
@@ -1420,9 +1762,9 @@ DUP:
   .DATA ALIGN
 DUP_WA: .DATA DUP_CA
 DUP_CA:
-  POP SP,A
-  PUSH SP,A
-  PUSH SP,A
+  POP RA,SP
+  PUSH RA,SP
+  PUSH RA,SP
   JPI NEXT
 
 ; ( 1 2 3 -- 3 1 2 )
@@ -1431,12 +1773,12 @@ ROT:
   .DATA DUP
 ROT_WA: .DATA ROT_CA
 ROT_CA:
-  POP SP,R3
-  POP SP,R2
-  POP SP,R1
-  PUSH SP,R3
-  PUSH SP,R1
-  PUSH SP,R2
+  POP R3,SP
+  POP R2,SP
+  POP R1,SP
+  PUSH R3,SP
+  PUSH R1,SP
+  PUSH R2,SP
   JPI NEXT
 
 ; ( 1 2 3 -- 2 3 1 )
@@ -1445,12 +1787,12 @@ LROT:
   .DATA ROT
 LROT_WA: .DATA LROT_CA
 LROT_CA:
-  POP SP,R3
-  POP SP,R2
-  POP SP,R1
-  PUSH SP,R2
-  PUSH SP,R3
-  PUSH SP,R1
+  POP R3,SP
+  POP R2,SP
+  POP R1,SP
+  PUSH R2,SP
+  PUSH R3,SP
+  PUSH R1,SP
   JPI NEXT
 
 ; ( xn .. x0 u -- xn .. x0 xu)
@@ -1459,13 +1801,13 @@ PICK:
   .DATA LROT
 PICK_WA: .DATA PICK_CA
 PICK_CA:
-  POP SP,R0
+  POP R0,SP
   MOV R1,SP
   ADD R1,R0
   ADD R1,R0 ; *2 to word-align
   ADDI R1,2 ; 
   LD R2,R1
-  PUSH SP,R2
+  PUSH R2,SP
   JPI NEXT
 
 SWAP:
@@ -1473,10 +1815,10 @@ SWAP:
   .DATA PICK
 SWAP_WA: .DATA SWAP_CA
 SWAP_CA:
-  POP SP,R0
-  POP SP,R1
-  PUSH SP,R0
-  PUSH SP,R1
+  POP R0,SP
+  POP R1,SP
+  PUSH R0,SP
+  PUSH R1,SP
   JPI NEXT
 
 DROP:
@@ -1485,7 +1827,7 @@ DROP:
 DROP_WA:
   .DATA DROP_CA
 DROP_CA:
-  POP SP,A
+  POP RA,SP
   JPI NEXT
 
 TWO_DROP:
@@ -1494,8 +1836,8 @@ TWO_DROP:
 TWO_DROP_WA:
   .DATA TWO_DROP_CA
 TWO_DROP_CA:
-  POP SP,A
-  POP SP,A
+  POP RA,SP
+  POP RA,SP
   JPI NEXT
 
 OVER:
@@ -1503,11 +1845,11 @@ OVER:
   .DATA TWO_DROP
 OVER_WA: .DATA OVER_CA
 OVER_CA:
-  POP SP,A
-  POP SP,B
-  PUSH SP,B
-  PUSH SP,A
-  PUSH SP,B
+  POP RA,SP
+  POP RB,SP
+  PUSH RB,SP
+  PUSH RA,SP
+  PUSH RB,SP
   JPI NEXT
 
 COPY:
@@ -1521,9 +1863,9 @@ COPY_CA:
   .ALIAS R1,SRCL
   .ALIAS R2,DEST
   .ALIAS R3,DATA
-  POP SP,DEST
-  POP SP,SRCL
-  POP SP,SRCA
+  POP DEST,SP
+  POP SRCL,SP
+  POP SRCA,SP
 COPY_LOOP:
   CMPI SRCL,0
   JRI[Z] COPY_DONE
@@ -1546,9 +1888,9 @@ CCOPY_CA:
   .ALIAS R1,SRCL
   .ALIAS R2,DEST
   .ALIAS R3,DATA
-  POP SP,DEST
-  POP SP,SRCL
-  POP SP,SRCA
+  POP DEST,SP
+  POP SRCL,SP
+  POP SRCA,SP
 CCOPY_LOOP:
   CMPI SRCL,0
   JRI[Z] COPY_DONE
@@ -1567,8 +1909,8 @@ STRNCPY:
   .DATA CCOPY
 STRNCPY_WA: .DATA STRNCPY_CA
 STRNCPY_CA:
-  POP SP,R0
-  POP SP,R2
+  POP R0,SP
+  POP R2,SP
   LD  R1,R0
   JRI CCOPY_LOOP
 
@@ -1577,9 +1919,9 @@ INDEX_I:
   .DATA STRNCPY
 INDEX_I_WA: .DATA INDEX_I_CA
 INDEX_I_CA:
-  POP RS,A
-  PUSH RS,A
-  PUSH SP,A
+  POP RA,RS
+  PUSH RA,RS
+  PUSH RA,SP
   JPI NEXT
 
 INDEX_J:
@@ -1587,8 +1929,8 @@ INDEX_J:
   .DATA INDEX_I
 INDEX_J_WA: .DATA INDEX_J_CA
 INDEX_J_CA:
-  LDAX RS,3 ; words
-  PUSH SP,A
+  LDX RA,RS+3 ; words
+  PUSH RA,SP
   JPI NEXT
 
 INDEX_K:
@@ -1596,8 +1938,8 @@ INDEX_K:
   .DATA INDEX_J
 INDEX_K_WA: .DATA INDEX_K_CA
 INDEX_K_CA:
-  LDAX RS,5 ; words
-  PUSH SP,A
+  LDX RA,RS+5 ; words
+  PUSH RA,SP
   JPI NEXT
 
 COMMA:
@@ -1605,13 +1947,13 @@ COMMA:
   .DATA INDEX_K
 COMMA_WA: .DATA COMMA_CA
 COMMA_CA:
-  POP SP,A
-  LDI B,%DICTIONARY_POINTER
-  LD B,B
-  ST B,A
-  ADDI B,2
-  LDI A,%DICTIONARY_POINTER
-  ST A,B
+  POP RA,SP
+  LDI RB,%DICTIONARY_POINTER
+  LD RB,RB
+  ST RA,RB
+  ADDI RB,2
+  LDI RA,%DICTIONARY_POINTER
+  ST RB,RA
   JPI NEXT
 
 LEFT_SQUARE_BRACKET:
@@ -1659,23 +2001,14 @@ BRACKET_CHAR_CA:
   .DATA COMMA_WA
   .DATA STAR_SEMI_WA
 
-FLUSH:  ; Flush stdout
-  .N "FLUSH"
-  .DATA BRACKET_CHAR
-FLUSH_WA:
-    .DATA FLUSH_CA
-FLUSH_CA:
-    SYSCALL #SYSCALL_FLUSH
-    JPI NEXT
-
 ASPACE:           ; Forth word to push a space char to the stack
   .N "&sp;"
-  .DATA FLUSH
+  .DATA BRACKET_CHAR
 ASPACE_WA:
   .DATA ASPACE_CA
 ASPACE_CA:
   MOVAI 0x20
-  PUSH SP,A
+  PUSH RA,SP
   JPI NEXT
 
 DOT_ASPACE:           
@@ -1691,57 +2024,57 @@ DOT_ASPACE_CA:
 ZERO: .N "0" .DATA DOT_ASPACE 
 ZERO_WA: .DATA ZERO_CA
 ZERO_CA: 
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 ONE: .N "1" .DATA ZERO 
 ONE_WA: .DATA ONE_CA
 ONE_CA: 
-  MOVI A,1
-  PUSH SP,A
+  MOVI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 TWO: .N "2" .DATA ONE 
 TWO_WA: .DATA TWO_CA
 TWO_CA: 
-  MOVI A,2
-  PUSH SP,A
+  MOVI RA,2
+  PUSH RA,SP
   JPI NEXT
 
 THREE: .N "3" .DATA TWO 
 THREE_WA: .DATA THREE_CA
 THREE_CA: 
-  MOVI A,3
-  PUSH SP,A
+  MOVI RA,3
+  PUSH RA,SP
   JPI NEXT
 
 FOUR: .N "4" .DATA THREE 
 FOUR_WA: .DATA FOUR_CA
 FOUR_CA: 
-  MOVI A,4
-  PUSH SP,A
+  MOVI RA,4
+  PUSH RA,SP
   JPI NEXT
 
 FIVE: .N "5" .DATA FOUR 
 FIVE_WA: .DATA FIVE_CA
 FIVE_CA: 
-  MOVI A,5
-  PUSH SP,A
+  MOVI RA,5
+  PUSH RA,SP
   JPI NEXT
 
 SIX: .N "6" .DATA FIVE 
 SIX_WA: .DATA SIX_CA
 SIX_CA: 
-  MOVI A,6
-  PUSH SP,A
+  MOVI RA,6
+  PUSH RA,SP
   JPI NEXT
 
 SEVEN: .N "7" .DATA SIX 
 SEVEN_WA: .DATA SEVEN_CA
 SEVEN_CA: 
-  MOVI A,7
-  PUSH SP,A
+  MOVI RA,7
+  PUSH RA,SP
   JPI NEXT
 
 ONE_PLUS:
@@ -1749,9 +2082,9 @@ ONE_PLUS:
   .DATA SEVEN
 ONE_PLUS_WA: .DATA ONE_PLUS_CA
 ONE_PLUS_CA:
-  POP SP,A
-  ADDI A,1
-  PUSH SP,A
+  POP RA,SP
+  ADDI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 TWO_PLUS:
@@ -1759,9 +2092,9 @@ TWO_PLUS:
   .DATA ONE_PLUS
 TWO_PLUS_WA: .DATA TWO_PLUS_CA
 TWO_PLUS_CA:
-  POP SP,A
-  ADDI A,2
-  PUSH SP,A
+  POP RA,SP
+  ADDI RA,2
+  PUSH RA,SP
   JPI NEXT
 
 FOUR_PLUS:
@@ -1769,9 +2102,9 @@ FOUR_PLUS:
   .DATA TWO_PLUS
 FOUR_PLUS_WA: .DATA FOUR_PLUS_CA
 FOUR_PLUS_CA:
-  POP SP,A
-  ADDI A,4
-  PUSH SP,A
+  POP RA,SP
+  ADDI RA,4
+  PUSH RA,SP
   JPI NEXT
 
 ONE_MINUS:
@@ -1779,9 +2112,9 @@ ONE_MINUS:
   .DATA FOUR_PLUS
 ONE_MINUS_WA: .DATA ONE_MINUS_CA
 ONE_MINUS_CA:
-  POP SP,A
-  ADDI A,-1
-  PUSH SP,A
+  POP RA,SP
+  SUBI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 TWO_MINUS:
@@ -1789,9 +2122,9 @@ TWO_MINUS:
   .DATA ONE_MINUS
 TWO_MINUS_WA: .DATA TWO_MINUS_CA
 TWO_MINUS_CA:
-  POP SP,A
-  ADDI A,-2
-  PUSH SP,A
+  POP RA,SP
+  SUBI RA,2
+  PUSH RA,SP
   JPI NEXT
 
 TWO_TIMES:
@@ -1799,9 +2132,9 @@ TWO_TIMES:
   .DATA TWO_MINUS
 TWO_TIMES_WA: .DATA TWO_TIMES_CA
 TWO_TIMES_CA:
-  POP SP,A
-  SLI A,1
-  PUSH SP,A
+  POP RA,SP
+  SLI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 TWO_DIV:
@@ -1809,10 +2142,9 @@ TWO_DIV:
   .DATA TWO_TIMES
 TWO_DIV_WA: .DATA TWO_DIV_CA
 TWO_DIV_CA:
-  POP SP,A
-  MOVI B,2
-  DIV A,B
-  PUSH SP,A
+  POP RA,SP
+  SRI RA,1
+  PUSH RA,SP
   JPI NEXT
 
 RP_AT:
@@ -1821,9 +2153,9 @@ RP_AT:
   .DATA TWO_DIV
 RS_AT_WA: .DATA RS_AT_CA
 RS_AT_CA:
-  POP RS,A
-  PUSH RS,A
-  PUSH SP,A
+  POP RA,RS
+  PUSH RA,RS
+  PUSH RA,SP
   JPI NEXT
 
 POP_RS:
@@ -1834,9 +2166,9 @@ POP_RS:
 POP_RS_WA: .DATA POP_RS_CA
 POP_RS_CA:
   MOV RS,FP
-  POP RS,A
-  POP RS,FP
-  PUSH SP,A
+  POP RA,RS
+  POP FP,RS
+  PUSH RA,SP
   JPI NEXT 
 
 FP:
@@ -1846,7 +2178,7 @@ FP:
   .DATA POP_RS
 FP_WA: .DATA FP_CA
 FP_CA:
-  PUSH SP,FP
+  PUSH FP,SP
   JPI NEXT
 
 STAR_ALLOT_LOCALS:
@@ -1857,13 +2189,13 @@ STAR_ALLOT_LOCALS:
   .DATA FP
 STAR_ALLOT_LOCALS_WA: .DATA STAR_ALLOT_LOCALS_CA
 STAR_ALLOT_LOCALS_CA:
-  MOVI A,0
-  POP SP,B
+  MOVI RA,0
+  POP RB,SP
 STAR_ALLOT_LOCALS_LOOP:
-  CMPI B,0
+  CMPI RB,0
   JRI[Z] STAR_ALLOT_LOCALS_DONE
-  PUSH RS,A
-  SUBI B,1
+  PUSH RA,SP
+  SUBI RB,1
   JRI STAR_ALLOT_LOCALS_LOOP
 STAR_ALLOT_LOCALS_DONE:
   JPI NEXT
@@ -1883,7 +2215,7 @@ STAR_INIT_LOCALS_CA:
   .ALIAS R3,SPP
   .ALIAS R4,VAL
 
-  POP SP,NUM
+  POP NUM,SP
   MOV IDX,NUM
   MOV OFFSET,NUM
   ADD OFFSET,OFFSET
@@ -1895,7 +2227,7 @@ STAR_INIT_LOCALS_LOOP:
   MOV SPP,SP
   ADD SPP,OFFSET
   LD VAL,SPP
-  PUSH RS,VAL
+  PUSH VAL,RS
   SUBI OFFSET,2
   JRI STAR_INIT_LOCALS_LOOP
 STAR_INIT_LOCALS_DONE:
@@ -1909,8 +2241,8 @@ R_FROM:
 R_FROM_WA:
   .DATA R_FROM_CA
 R_FROM_CA:
-  POP RS,A
-  PUSH SP,A
+  POP RA,RS
+  PUSH RA,SP
   JPI NEXT
 
 TO_R:
@@ -1919,8 +2251,8 @@ TO_R:
 TO_R_WA:
   .DATA TO_R_CA
 TO_R_CA:
-  POP SP,A
-  PUSH RS,A
+  POP RA,SP
+  PUSH RS,RS
   JPI NEXT
 
 R_DROP:
@@ -1929,7 +2261,7 @@ R_DROP:
 R_DROP_WA:
   .DATA R_DROP_CA
 R_DROP_CA:
-  POP RS,A
+  POP RA,RS
   JPI NEXT
 
 ENTRY:
@@ -1948,8 +2280,8 @@ DP:
   .DATA ENTRY
 DP_WA: .DATA DP_CA
 DP_CA:
-  LDI A,%DICTIONARY_POINTER
-  PUSH SP,A
+  LDI RA,%DICTIONARY_POINTER
+  PUSH RA,SP
   JPI NEXT
 
 DP_STORE:
@@ -1957,9 +2289,9 @@ DP_STORE:
   .DATA DP
 DP_STORE_WA: .DATA DP_STORE_CA
 DP_STORE_CA:
-  LDI A,%DICTIONARY_POINTER
-  POP SP,B
-  ST A,B
+  LDI RA,%DICTIONARY_POINTER
+  POP RB,SP
+  ST RB,RA
   JPI NEXT
 
 DP_AT:
@@ -1967,9 +2299,9 @@ DP_AT:
   .DATA DP_STORE
 DP_AT_WA: .DATA DP_AT_CA
 DP_AT_CA:
-  LDI A,%DICTIONARY_POINTER
-  LD A,A
-  PUSH SP,A
+  LDI RA,%DICTIONARY_POINTER
+  LD RA,RA
+  PUSH RA,SP
   JPI NEXT
 
 LBUF: ; ( -- lbuf-start lbuf-len )
@@ -1977,10 +2309,10 @@ LBUF: ; ( -- lbuf-start lbuf-len )
   .DATA DP_AT
 LBUF_WA: .DATA LBUF_CA
 LBUF_CA:
-  LDI A,%LBUF_DATA
-  PUSH SP,A
-  LDI A,#LBUF_LEN
-  PUSH SP,A
+  LDI RA,%LBUF_DATA
+  PUSH RA,SP
+  LDI RA,#LBUF_LEN
+  PUSH RA,SP
   JPI NEXT
 
 WA_TO_LA:
@@ -1989,15 +2321,15 @@ WA_TO_LA:
 WA_TO_LA_WA: .DATA WA_TO_LA_CA
 WA_TO_LA_CA:
   ; ( wa -- ca )
-  POP SP,A
-  MOV B,A
-  LD A,B ; Length to A
+  POP RA,SP
+  MOV RB,RA
+  LD RA,RB ; Length to A
   LDI R0, #HEADER_MASK
-  AND A,R0
-  ADD A,B
-  ADDI A,3
-  CLRI A,0 ; Word-align
-  PUSH SP,A
+  AND RA,R0
+  ADD RA,RB
+  ADDI RA,3
+  CLRI RA,0 ; Word-align
+  PUSH RA,SP
   JPI NEXT
 
 WA_TO_CA:
@@ -2006,15 +2338,15 @@ WA_TO_CA:
 WA_TO_CA_WA: .DATA WA_TO_CA_CA
 WA_TO_CA_CA:
   ; ( wa -- ca )
-  POP SP,A
-  MOV B,A
-  LD A,B ; Length to A
+  POP RA,SP
+  MOV RB,RA
+  LD RA,RB ; Length to A
   LDI R0, #HEADER_MASK
-  AND A,R0
-  ADD A,B
-  ADDI A,5
-  CLRI A,0 ; Word-align
-  PUSH SP,A
+  AND RA,R0
+  ADD RA,RB
+  ADDI RA,5
+  CLRI RA,0 ; Word-align
+  PUSH RA,SP
   JPI NEXT
 
 WA_TO_CB:
@@ -2023,15 +2355,15 @@ WA_TO_CB:
 WA_TO_CB_WA: .DATA WA_TO_CB_CA
 WA_TO_CB_CA:
   ; ( wa -- cb )
-  POP SP,A
-  MOV B,A
-  LD A,B ; Length to A
+  POP RA,SP
+  MOV RB,RA
+  LD RA,RB ; Length to A
   LDI R0, #HEADER_MASK
-  AND A,R0
-  ADD A,B
-  ADDI A,7
-  CLRI A,0 ; Word-align
-  PUSH SP,A
+  AND RA,R0
+  ADD RA,RB
+  ADDI RA,7
+  CLRI RA,0 ; Word-align
+  PUSH RA,SP
   JPI NEXT
 
 ;  : CA>WA 
@@ -2159,8 +2491,8 @@ CURRENT:
 CURRENT_WA:
   .DATA CURRENT_CA
 CURRENT_CA:
-  LDI A,%CURRENT
-  PUSH SP,A
+  LDI RA,%CURRENT
+  PUSH RA,SP
   JPI NEXT
 
 CONTEXT:
@@ -2169,8 +2501,8 @@ CONTEXT:
 CONTEXT_WA:
   .DATA CONTEXT_CA
 CONTEXT_CA:
-  LDI A,%CONTEXT
-  PUSH SP,A
+  LDI RA,%CONTEXT
+  PUSH RA,SP
   JPI NEXT
 
 DEFINITIONS:
@@ -2201,12 +2533,12 @@ HEADER_TO_MODE:
   .DATA CASTORE
 HEADER_TO_MODE_WA: .DATA HEADER_TO_MODE_CA
 HEADER_TO_MODE_CA:
-  POP SP,A
-  LDI B,#HEADER_HEADER_BIT
-  CLR A,B
-  LDI B,#HEADER_SCOPE_BITS
-  SR A,B
-  PUSH SP,A
+  POP RA,SP
+  LDI RB,#HEADER_HEADER_BIT
+  CLR RA,RB
+  LDI RB,#HEADER_SCOPE_BITS
+  SR RA,RB
+  PUSH RA,SP
   JPI NEXT
 
 Q_EXECUTE:
@@ -2311,9 +2643,9 @@ Q_NUMBER:
   .DATA Q_EXECUTE
 Q_NUMBER_WA: .DATA Q_NUMBER_CA
 Q_NUMBER_CA:
-  LDI A,%DICTIONARY_POINTER
-  LD A,A
-  PUSH SP,A
+  LDI RA,%DICTIONARY_POINTER
+  LD RA,RA
+  PUSH RA,SP
   SYSCALL #SYSCALL_NUMBER
   JPI NEXT
 
@@ -2323,12 +2655,12 @@ EXECUTE:
 EXECUTE_WA:
   .DATA EXECUTE_CA
 EXECUTE_CA:
-  POP SP,WA ; points to the WA
-  MOV A,WA
-  LD A,A ; Get the length
-  LDI B,#HEADER_MASK ; flags
-  AND A,B
-  ADD WA,A
+  POP WA,SP ; points to the WA
+  MOV RA,WA
+  LD RA,RA ; Get the length
+  LDI RB,#HEADER_MASK ; flags
+  AND RA,RB
+  ADD WA,RA
   ADDI WA,5 ; Skip over the name and link
   CLRI WA,0 ; WOrd-align
   JPI RUN
@@ -2353,7 +2685,7 @@ TOKEN_CA:
   ; 
 
   ; Get the separator
-  POP SP,B
+  POP RB,SP
 
   MOVI R1,0 ; Token length
   MOVI R3,0
@@ -2400,8 +2732,8 @@ TOKEN_DONE:
   JRI[Z] TOKEN_END
   ; Move the token to the end of the dictionary
   ; So ?SEARCH can access it
-  LDI A,%DICTIONARY_POINTER
-  LD B,A    ; B Points to the dictionary
+  LDI RA,%DICTIONARY_POINTER
+  LD RB,RA    ; B Points to the dictionary
   ADDI B,2  ; Bump the dictionary pointer
   SUB R0,R1 ; Reset the buffer pointer
 
@@ -2415,13 +2747,13 @@ TOKEN_MOVE:
   ;
   ; And we're done
   ; Save the current pointer
-  LDI A,%LBUF_IDX
+  LDI RA,%LBUF_IDX
   ADDI R0,1 ; Point past the terminator
   ST A,R0
 
 TOKEN_END:
-  LDI A,%DICTIONARY_POINTER
-  LD B,A    ; B Points to the dictionary
+  LDI RA,%DICTIONARY_POINTER
+  LD RB,RA    ; B Points to the dictionary
   ST B,R3   ; Save the length
   JPI NEXT
 
@@ -2430,10 +2762,10 @@ TOKEN_LEN:
   .DATA TOKEN
 TOKEN_LEN_WA: .DATA TOKEN_LEN_CA
 TOKEN_LEN_CA:
-  LDI A,%DICTIONARY_POINTER
-  LD A,A
-  LD A,A
-  PUSH SP,A
+  LDI RA,%DICTIONARY_POINTER
+  LD RA,RA
+  LD RA,RA
+  PUSH RA,SP
   JPI NEXT
 
 ; INLINE - Read a line from the terminal
@@ -2448,10 +2780,10 @@ INLINE_WA:
     .DATA INLINE_CA
 INLINE_CA:
     ; Put the address and length of the line buffer on the stack
-    LDI A,%LBUF_IDX
-    PUSH SP,A
-    LDI A,#LBUF_LEN
-    PUSH SP,A
+    LDI RA,%LBUF_IDX
+    PUSH RA,SP
+    LDI RA,#LBUF_LEN
+    PUSH RA,SP
     SYSCALL #SYSCALL_INLINE
     SYSCALL #SYSCALL_QEXIT
     JPI NEXT
@@ -2466,7 +2798,7 @@ STAR_HASH_WA:
     .DATA STAR_HASH_CA
 STAR_HASH_CA:
     LD A,I
-    PUSH SP,A
+    PUSH RA,SP
     ADDI I,2
     JPI NEXT
 
@@ -2476,9 +2808,9 @@ BEGIN:
   .DATA STAR_HASH
 BEGIN_WA: .DATA BEGIN_CA
 BEGIN_CA:
-  LDI A,%DICTIONARY_POINTER
-  LD A,A ; current DP
-  PUSH SP,A
+  LDI RA,%DICTIONARY_POINTER
+  LD RA,RA ; current DP
+  PUSH RA,SP
   JPI NEXT
 
 UNTIL:
@@ -2499,7 +2831,7 @@ STAR_UNTIL:
   .DATA UNTIL
 STAR_UNTIL_WA: .DATA STAR_UNTIL_CA
 STAR_UNTIL_CA:
-  POP SP,A ; get the flag
+  POP RA,SP ; get the flag
   CMPI A,0
   JRI[NZ] STAR_UNTIL_DONE
   LD I,I ; Jump back to the begin
@@ -2542,7 +2874,7 @@ CASE_OF_CA:
   .ALIAS R2,*DP
   .ALIAS R3,NUM
 
-  POP SP,NUM
+  POP NUM,SP
   ADDI NUM,1
   LDI *OF,STAR_OF_WA
   LDI DP,%DICTIONARY_POINTER
@@ -2566,13 +2898,13 @@ ENDOF_CA:
   ; R0 - Address of DP
   ; R1 - Value of DP (HERE)
   ; R2 - location of jump address
-  POP SP,R3 ; Number of clauses
-  POP SP,R2 ; Address of previous *OF + 2
+  POP R3,SP ; Number of clauses
+  POP R2,SP ; Address of previous *OF + 2
   LDI R0,%DICTIONARY_POINTER
   LD R1,R0
   ADDI R1,4
   ST R2,R1   ; Save it in the jump location
-  LDI A,STAR_OF_ENDOF_WA
+  LDI RA,STAR_OF_ENDOF_WA
   ADDI R1,-4
   ST R1,A  ; Compile to the current definition
   ADDI R1,2
@@ -2588,7 +2920,7 @@ ESAC:
 ESAC_WA: .DATA ESAC_CA
 ESAC_CA:
   ; number of jump locations to fill in is TOS
-  POP SP,R0
+  POP R0,SP
   LDI R1,%DICTIONARY_POINTER
   LD R1,R1
   LDI R2,STAR_ESAC_WA
@@ -2602,7 +2934,7 @@ ESAC_LOOP:
   AND R0,R0
   JRI[Z] ESAC_LOOP_DONE
   ADDI R0,-1
-  POP SP,R2
+  POP R2,SP
   ST R2,R1
   JRI ESAC_LOOP
 
@@ -2617,8 +2949,8 @@ STAR_OF_WA:
   .DATA STAR_OF_CA
 STAR_OF_CA:
 ; ( v1 v2 -- v1 )
-  POP SP,A 
-  POP SP,B
+  POP RA,SP 
+  POP RB,SP
   CMP A,B
   JRI[Z] STAR_OF_RUN
   PUSH SP,B
@@ -2674,12 +3006,12 @@ ELSE_CA:
   ; R0 - Address of DP
   ; R1 - Value of DP (HERE)
   ; R2 - location of jump address
-  POP SP,R2
+  POP R2,SP
   LDI R0,%DICTIONARY_POINTER
   LD R1,R0
   ADDI R1,4
   ST R2,R1   ; Save it in the jump location
-  LDI A,STAR_ELSE_WA
+  LDI RA,STAR_ELSE_WA
   ADDI R1,-4
   ST R1,A  ; Compile *ELSE to the current definition
   ADDI R1,2
@@ -2695,10 +3027,10 @@ THEN_WA:
   .DATA THEN_CA
 THEN_CA:
   ; TOS contains the location of the word to use for the IF/ELSE  jump
-  POP SP,A
-  LDI B,%DICTIONARY_POINTER ; Current dictionary location to B
+  POP RA,SP
+  LDI RB,%DICTIONARY_POINTER ; Current dictionary location to B
   LD B,B
-  ST A,B   ; Save it in the jump location
+  ST RB,RA   ; Save it in the jump location
   JPI NEXT  
 
 STAR_IF:
@@ -2707,7 +3039,7 @@ STAR_IF:
 STAR_IF_WA:
   .DATA STAR_IF_CA
 STAR_IF_CA:
-  POP SP,A ; get the flag
+  POP RA,SP ; get the flag
   CMPI A,0
   JRI[Z] STAR_ELSE_CA
   ADDI I,2
@@ -2755,10 +3087,10 @@ STAR_DO:
   .DATA QDO
 STAR_DO_WA: .DATA STAR_DO_CA
 STAR_DO_CA:
-  POP SP,A
-  POP SP,B
+  POP RA,SP
+  POP RB,SP
   PUSH RS,B
-  PUSH RS,A
+  PUSH RS,RS
   JPI NEXT
 
 STAR_QDO:
@@ -2766,17 +3098,17 @@ STAR_QDO:
   .DATA STAR_DO
 STAR_QDO_WA: .DATA STAR_QDO_CA
 STAR_QDO_CA:
-  POP SP,A
-  POP SP,B
-  CMP B,A
+  POP RA,SP
+  POP RB,SP
+  CMP RB,RA
   JRI[Z] STAR_QDO_DONT
   JRI[C] STAR_QDO_DONT
   PUSH SP,B
-  PUSH SP,A
-  ADDI I,2
+  PUSH RA,SP
+  ADDI RI,2
   JRI STAR_DO_CA
 STAR_QDO_DONT:
-  LD I,I
+  LD RI,RI
   JPI NEXT
 
 LOOP:
@@ -2844,19 +3176,19 @@ STAR_LOOP:
   .DATA MINUS_LOOP
 STAR_LOOP_WA: .DATA STAR_LOOP_CA
 STAR_LOOP_CA:
-  POP RS,A ; current index
-  POP RS,B ; end
-  ADDI A,1
+  POP RA,RS; current index
+  POP RB,RS; end
+  ADDI RA,1
 STAR_CHECK_LOOP:
-  CMP A,B 
+  CMP RA,RB 
   JRI[C] STAR_LOOP_MORE ; Index not exceeded
   ; Index exceeded, loop is over
-  ADDI I,2
+  ADDI RI,2
   JPI NEXT
 STAR_LOOP_MORE:
   PUSH RS,B
-  PUSH RS,A
-  LD I,I
+  PUSH RS,RS
+  LD RI,RI
   JPI NEXT
 
 STAR_PLUS_LOOP:
@@ -2864,10 +3196,10 @@ STAR_PLUS_LOOP:
   .DATA STAR_LOOP
 STAR_PLUS_LOOP_WA: .DATA STAR_PLUS_LOOP_CA
 STAR_PLUS_LOOP_CA:
-  POP RS,A
-  POP RS,B
-  POP SP,R0
-  ADD A,R0
+  POP RA,RS
+  POP RB,RS
+  POP R0,SP
+  ADD RA,R0
   JRI STAR_CHECK_LOOP
   ; No return address
 
@@ -2882,9 +3214,9 @@ STAR_MINUS_LOOP_CA:
   .ALIAS B,LIMIT
   .ALIAS R0,INCREMENT
 
-  POP RS,INDEX
-  POP RS,LIMIT
-  POP SP,INCREMENT
+  POP INDEX,RS
+  POP LIMIT,RS
+  POP INCREMENT,SP
   SUB INDEX,INCREMENT
   CMP LIMIT,INDEX
   JRI[Z] STAR_LOOP_MORE ; Index not exceeded
@@ -2893,18 +3225,18 @@ STAR_MINUS_LOOP_CA:
   BITI R0,15
   JRI[Z] STAR_MINUS_LOOP_SAME_SIGN
   ; Signs are different, so the negative one is <
-  BITI A,15
+  BITI RA,15
   JRI[Z] STAR_LOOP_MORE
   JRI STAR_MINUS_LOOP_DONE
 
 STAR_MINUS_LOOP_SAME_SIGN:
   ; We can just do a normal compare
-  CMP A,B
+  CMP RA,RB
   JRI[NC] STAR_LOOP_MORE
 
 STAR_MINUS_LOOP_DONE:
   ; Index exceeded, loop is over
-  ADDI I,2
+  ADDI RI,2
   JPI NEXT
 
 DONE:
@@ -2934,7 +3266,7 @@ RP:
   .DATA SP
 RP_WA: .DATA RP_CA
 RP_CA:
-  PUSH SP,RS
+  PUSH RS,SP
 JPI NEXT
 
 DOT_LOCATION:
@@ -3149,11 +3481,11 @@ WORD_LEN:
   .DATA PROCESS_TOKENS
 WORD_LEN_WA: .DATA WORD_LEN_CA
 WORD_LEN_CA:
-  POP SP,A
-  LD A,A
-  LDI B,#HEADER_MASK
+  POP RA,SP
+  LD RA,RA
+  LDI RB,#HEADER_MASK
   AND A,B
-  PUSH SP,A
+  PUSH RA,SP
   JPI NEXT  
 
 DOT_WORD:
@@ -3164,9 +3496,9 @@ DOT_WORD_CA:
   ; ( wordAddr -- )
   ; R0 - addr -> idx
   ; R1 - len
-  POP SP,R0
+  POP R0,SP
   LD R1,R0 ; Len to R1
-  LDI B,#HEADER_MASK
+  LDI RB,#HEADER_MASK
   AND R1,B
   ADDI R0,2 ; point to word
 DOT_WORD_LOOP:
@@ -3202,8 +3534,8 @@ CRET:
   .DATA NEXT_WORD
 CRET_WA: .DATA CRET_CA
 CRET_CA:
-  LDI A,0x0a
-  PUSH SP,A
+  LDI RA,0x0a
+  PUSH RA,SP
   SYSCALL #SYSCALL_PUTC
   JPI NEXT
 
@@ -3300,7 +3632,7 @@ SEARCH_CA:
 
 SEARCH_NEXT:
   LD LENB,SWA  ; get the length of the word
-  LDI A,#HEADER_MASK
+  LDI RA,#HEADER_MASK
   AND LENB,A
   CMP LENB,LENA ; Same as the token?
   JRI[Z] SEARCH_COMPARE
@@ -3315,8 +3647,8 @@ SEARCH_COMPARE_FAIL:
 
 SEARCH_EXIT:
   ; Not found so leave the bufferr address zero on the stack and exit
-  MOVI A,0
-  PUSH SP,A
+  MOVI RA,0
+  PUSH RA,SP
   JPI NEXT
 
 SEARCH_COMPARE:
@@ -3337,8 +3669,8 @@ SEARCH_COMPARE_LOOP:
   JRI[NZ] SEARCH_COMPARE_LOOP
 SEARCH_COMPARE_FOUND:
   PUSH SP,SWA ; Name address to the stack
-  MOVI A,1
-  PUSH SP,A   ; And a true flag
+  MOVI RA,1
+  PUSH RA,SP   ; And a true flag
   JPI NEXT
 
 TWO_DOTS: ; This is the public COLON routine
@@ -3428,12 +3760,12 @@ STAR_S_LIT:
   .DATA S_LIT
 STAR_S_LIT_WA: .DATA STAR_S_LIT_CA
 STAR_S_LIT_CA:
-  MOV A,I
-  LD B,I
-  ADD I,B
-  ADDI I,3
-  CLRI I,0 ; Word align
-  PUSH SP,A
+  MOV RA,RI
+  LD RB,RI
+  ADD RI,RB
+  ADDI RI,3
+  CLRI RI,0 ; Word align
+  PUSH RA,SP
   JPI NEXT
 
 QUESTION:
@@ -3557,12 +3889,12 @@ CSPLIT_WA: .DATA CSPLIT_CA
 CSPLIT_CA:
 ; Split the TOS into two bytes
 ; ( word -- l h )
-  POP SP,A
+  POP RA,SP
   MOV B,A
   LDI R0,0x00ff
   AND A,R0
   SRI B,8
-  PUSH SP,A
+  PUSH RA,SP
   PUSH SP,B
   JPI NEXT
 
@@ -3596,8 +3928,8 @@ EXIT:
   .DATA DOT_TWO_CHARS
 EXIT_WA: .DATA EXIT_CA
 EXIT_CA:
-  MOVI A,3
-  PUSH SP,A
+  MOVI RA,3
+  PUSH RA,SP
   SYSCALL #SYSCALL_QEXIT
   JPI NEXT
 
@@ -3648,10 +3980,10 @@ FREAD_WA: .DATA FREAD_CA
 FREAD_CA:
 ; ( -- bytes-read )
 ; Put the address of the line buffer on the stack
-  LDI A,%LBUF_IDX
-  PUSH SP,A
-  LDI A,#LBUF_LEN
-  PUSH SP,A
+  LDI RA,%LBUF_IDX
+  PUSH RA,SP
+  LDI RA,#LBUF_LEN
+  PUSH RA,SP
   SYSCALL #SYSCALL_FREAD
   JPI NEXT
 
@@ -3743,8 +4075,8 @@ VAR_FENCE:
   .DATA EXPAND
 VAR_FENCE_WA: .DATA VAR_FENCE_CA
 VAR_FENCE_CA:
-  LDI A,%FENCE
-  PUSH SP,A
+  LDI RA,%FENCE
+  PUSH RA,SP
   JPI NEXT
 
 ; Set %FENCE to point ot the last word in the dictionary

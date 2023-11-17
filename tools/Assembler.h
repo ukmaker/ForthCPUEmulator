@@ -34,6 +34,7 @@ public:
     static inline const char *HEX_NUMBER_EXPECTED = "Hex number expected";
     static inline const char *BINARY_NUMBER_EXPECTED = "Binary number expected";
     static inline const char *DECIMAL_NUMBER_EXPECTED = "Decimal number expected";
+    static inline const char *OPERATOR_PLUS_MINUS_EXPECTED = "Offset operator (+ or -) expected";
 
     Assembler()
     {
@@ -513,108 +514,6 @@ public:
         }
 
         return r;
-    }
-
-    void writeCode()
-    {
-        Token *tok = tokens;
-        uint8_t written;
-        const char *c;
-        uint16_t headerLen;
-
-        while (tok != NULL)
-        {
-            switch (tok->type)
-            {
-
-            case TOKEN_TYPE_DIRECTIVE:
-                switch (tok->directive)
-                {
-                case DIRECTIVE_TYPE_DATA:
-                    printf("%04x %02x %02x\n", tok->address, (tok->value & 0xff00) >> 8, tok->value & 0xff);
-                    break;
-
-                case DIRECTIVE_TYPE_PLAIN_STRING:
-                {
-                    c = tok->str;
-                    written = 0;
-                    while (*c != '\0')
-                    {
-                        if (written % 8 == 0)
-                        {
-                            printf("\n%04x ", tok->address + written);
-                        }
-                        printf("%02x ", *c);
-                        written++;
-                        c++;
-                    }
-                    printf("\n");
-                }
-                case DIRECTIVE_TYPE_NWORD_STRING:
-                case DIRECTIVE_TYPE_RWORD_STRING:
-                case DIRECTIVE_TYPE_IWORD_STRING:
-                case DIRECTIVE_TYPE_XWORD_STRING:
-                case DIRECTIVE_TYPE_CWORD_STRING:
-                {
-                    headerLen = headerWord(tok);
-                    c = tok->str;
-                    printf("\n%04x %02x %02x ", tok->address, headerLen & 0xff, headerLen >> 8);
-                    written = 2;
-                    while (*c != '\0')
-                    {
-                        if (written % 8 == 0)
-                        {
-                            printf("\n%04x ", tok->address + written);
-                        }
-                        printf("%02x ", *c);
-                        written++;
-                        c++;
-                    }
-                    printf("\n");
-                }
-                break;
-                default:
-                    break;
-                }
-                break;
-
-            case TOKEN_TYPE_VAR:
-                printf("%04x %02x %02x\n", tok->address, (tok->value & 0xff00) >> 8, tok->value & 0xff);
-                break;
-
-            case TOKEN_TYPE_STR:
-            {
-                c = tok->str;
-                written = 0;
-                while (*c != '\0')
-                {
-                    if (written % 8 == 0)
-                    {
-                        printf("\n%04x ", tok->address + written);
-                    }
-                    printf("%02x ", *c);
-                    written++;
-                    c++;
-                }
-                printf("\n");
-            }
-            break;
-
-            case TOKEN_TYPE_OPCODE:
-            {
-                printf("%04x %02x %02x\n", tok->address, tok->highByte(), tok->lowByte());
-                if(tok->opcode->isImmediate()) {
-                    printf("%04x %02x %02x\n", tok->address + 2, tok->value & 0xff, (tok->value & 0xff00) >> 8);
-                }
-            }
-            break;
-
-            default:
-                break;
-            }
-
-            tok = tok->next;
-        }
     }
 
     void writeMemory(Memory *ram)
@@ -1230,10 +1129,9 @@ public:
         }
 
         tok = new Token(NULL, line, pos);
-        if(line == 244) {
-            line -=1;
-            line +=1;
-        }
+
+
+
         tok->type = TOKEN_TYPE_OPCODE;
         tok->opcode = opcode;
         if (source[idx] == '[')
@@ -1288,24 +1186,9 @@ public:
                 case LDS_MODE_REG_REG_DEC:
                     instructionRR(tok);
                 break;
-
-                case LDS_MODE_REG_RL:
-                    instructionRR(tok);
-                break;
-
-                case LDS_MODE_REG_FP:
-                    instructionRR(tok);
-                break;
-
-                case LDS_MODE_REG_SP:
-                    instructionRR(tok);
-                break;
-
-                default: // LDS_MODE_REG_RS:
-                    instructionRR(tok);
-                break;
             }
-
+        } else if(tok->opcode->isLDX()) {
+            instructionRRX(tok);
         } else if(tok->opcode->isJMP()) {
             switch(tok->opcode->getJMPOp()) {
                 case JMP_OP_JP:
@@ -1351,6 +1234,11 @@ public:
     void instructionRR(Token *tok)
     {
         getArgA(tok) & comma(tok) & getArgB(tok);
+    }
+
+    void instructionRRX(Token *tok)
+    {
+        getArgA(tok) & comma(tok) & getArgB(tok) & getImmX(tok);
     }
 
     void instructionU8(Token *tok)
@@ -1490,6 +1378,40 @@ public:
     bool getImm(Token *tok)
     {
         skipSpaces();
+        if (source[idx] == '#' || source[idx] == '$' || source[idx] == '%' || source[idx] == '_')
+        {
+            if (!getSymbolName(tok))
+            {
+                return false;
+            }
+        }
+        else if (isAlpha(source[idx]))
+        {
+            if (!getSymbolName(tok))
+            {
+                return false;
+            }
+        }
+        else if (parseNumber(tok) == -1)
+        {
+            return error(tok, NUMBER_OR_LABEL_EXPECTED);
+        }
+        return true;
+    } 
+
+     // Look for an immediate offset - must start with + or -
+    bool getImmX(Token *tok)
+    {
+        skipSpaces();
+        tok->offsetSign = 1;
+        if(source[idx] == '-' || source[idx] == '+') {
+            if(source[idx] == '-') tok->offsetSign = -1;
+            inc();
+            skipSpaces();
+        } else {
+            return error(tok, OPERATOR_PLUS_MINUS_EXPECTED);
+        }
+
         if (source[idx] == '#' || source[idx] == '$' || source[idx] == '%' || source[idx] == '_')
         {
             if (!getSymbolName(tok))

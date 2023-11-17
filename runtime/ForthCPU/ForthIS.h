@@ -52,6 +52,8 @@
 #define LDS_OP_BITS        0x1800
 #define LDS_MODE_BITS_POS       8
 #define LDS_MODE_BITS      0x0700
+#define LDS_LDX_BIT_POS        10
+#define LDS_LDX_BIT        0x0400
 // ALU 
 #define ALU_OP_BITS_POS        10
 #define ALU_OP_BITS        0x3c00
@@ -80,19 +82,25 @@
 #define GEN_OP_RETI  4
 
 // Load/Store opcodes
-#define LDS_OP_LD    0
-#define LDS_OP_LD_B  1
-#define LDS_OP_ST    2
-#define LDS_OP_ST_B  3
+#define LDS_OP_LD     0
+#define LDS_OP_LD_B   1
+#define LDS_OP_ST     2
+#define LDS_OP_ST_B   3
+
+#define LDX_OP_LDX    4
+#define LDX_OP_LDX_B  5
+#define LDX_OP_STX    6
+#define LDX_OP_STX_B  7
 
 #define LDS_MODE_REG_REG     0
 #define LDS_MODE_REG_HERE    1
 #define LDS_MODE_REG_REG_INC 2
 #define LDS_MODE_REG_REG_DEC 3
-#define LDS_MODE_REG_RL      4
-#define LDS_MODE_REG_FP      5
-#define LDS_MODE_REG_SP      6
-#define LDS_MODE_REG_RS      7
+
+#define LDX_MODE_REG_RL      0
+#define LDX_MODE_REG_FP      1
+#define LDX_MODE_REG_SP      2
+#define LDX_MODE_REG_RS      3
 
 // Jump opcodes
 #define JMP_MODE_ABS_REG     0 
