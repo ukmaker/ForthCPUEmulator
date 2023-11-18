@@ -101,11 +101,11 @@ void setMode() {
   }
 }
 
-bool loadInnerInterpreter()
+bool loadFasmFile(const char* filename)
 {
-
   setMode();
-  fasm.slurp("fasm/core.fasm");
+  //fasm.slurp("fasm/core.fasm");
+  fasm.slurp(filename);
   fasm.pass1();
   fasm.pass2();
   fasm.pass3();
@@ -127,6 +127,15 @@ bool loadInnerInterpreter()
     printf("Phase 2 - %s\n", fasm.phase2Error ? "FAILED" : "OK");
     printf("Phase 3 - %s\n", fasm.phase3Error ? "FAILED" : "OK");
   }
+}
+
+bool loadTestCase() {
+  return loadFasmFile("tests/current-test-case.fasm");
+}
+
+bool loadInnerInterpreter()
+{
+  return loadFasmFile("fasm/core.fasm");
 }
 
 void generateCPP() {
@@ -203,6 +212,7 @@ bool commandLine() {
     case 'c': vm.reset(); vm.run(); prompt(); break;
     case 'w': vm.warm();  vm.run(); prompt(); break;
     case 'l': loadInnerInterpreter(); break;
+    case 't': loadTestCase(); break;
     case 'e': return false;
     case 'd': vm.warm();  while(debugger.commandLine()); prompt(); break;
     case 'D': dumper.dump(&fasm); break;
@@ -213,6 +223,7 @@ bool commandLine() {
       Serial.println("G - Generate ForthImage_xxx.h");
       Serial.println("M - Generate ROM *.mem file");
       Serial.println("l - (Re)Load the minimal image");
+      Serial.println("t - (Re)Load the current test case");
       Serial.println("c - Cold start the Forth VM");
       Serial.println("w - Warm start the Forth VM");
       Serial.println("d - Run the debugger");

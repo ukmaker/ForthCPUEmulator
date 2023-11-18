@@ -440,19 +440,19 @@ public:
             switch(mode)
             {
                 case JMP_MODE_ABS_REG:
-                    if(link) _regs[REG_RL] = _here;
+                    if(link) _regs[REG_RL] = _here+2;
                     _pc = _regs[_argb(instr)];
                     break;
                 case JMP_MODE_IND_REG:
-                    if(link) _regs[REG_RL] = _here;
+                    if(link) _regs[REG_RL] = _here+2;
                     _pc = _ram->get(_regs[_argb(instr)]);
                     break;
                 case JMP_MODE_ABS_HERE:
-                    if(link) _regs[REG_RL] = _here;
+                    if(link) _regs[REG_RL] = _here+2;
                     _pc = _ram->get(_pc);
                     break;
                 case JMP_MODE_REL_HERE:
-                    if(link) _regs[REG_RL] = _here;
+                    if(link) _regs[REG_RL] = _here+2;
                     _pc += _ram->get(_pc) - 2;
                     break;
             }
