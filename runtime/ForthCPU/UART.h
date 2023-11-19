@@ -49,18 +49,18 @@ class UART {
             }
         } else {
             _txActive = false;
+            _txDone = true;
         }
 
-        bool now = Serial.available();
+        if(!_rxAvailable) {
 
-        if(now && now != _then) {
-            // Rising edge of available
-            _rxInt = true;
-            _rxAvailable = true;
-            _rxD = Serial.getc();
+            if(Serial.available()) {
+                // Rising edge of available
+                _rxInt = true;
+                _rxAvailable = true;
+                _rxD = Serial.getc();
+            }
         }
-
-        _then = now;
     }
 
     void write(uint16_t addr, uint16_t data) {
@@ -116,7 +116,6 @@ class UART {
 
     uint16_t readRxData() {
         _rxAvailable = false;
-        _then = false;
         return _rxD;
     }
 
@@ -135,9 +134,6 @@ class UART {
     bool _txDone = true;
     bool _txActive = false;
     bool _rxAvailable = false;
-
-    bool _then = false;
-
     int _rxD;
 
     uint16_t _rxClkDiv = 1;

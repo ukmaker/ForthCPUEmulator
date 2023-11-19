@@ -1,6 +1,7 @@
 #ifndef UKMAKER_FSERIAL_H
 #define UKMAKER_FSERIAL_H
 #include <stdio.h>
+#include <sys/ioctl.h>
 #ifndef ARDUINO
 
 
@@ -9,7 +10,8 @@ class FSerial {
     public:
     
     int getc() {
-        return getchar();
+        int c = getchar();
+        return c;
     }
 
     int putc(char c) {
@@ -41,7 +43,8 @@ class FSerial {
     }
 
     bool available() {
-        return true;
+        int n;
+        return (ioctl(0, FIONREAD, &n) == 0 && n > 0);
     }
 
     int readBytesUntil(char separator, char *buf, size_t len) {

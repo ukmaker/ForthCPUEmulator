@@ -81,6 +81,10 @@ public:
         _verbose = v;
     }
 
+    void setBreak() {
+        _broken = true;
+    }
+
     void breakpoint()
     {
         if (_vm->get(REG_I) == _breakpointI)

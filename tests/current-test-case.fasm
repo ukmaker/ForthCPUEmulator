@@ -71,6 +71,95 @@ _SYSCALL_UART_RX_BYTE_WAIT_READY:
     POP R1,RS
     JP RL
 
+SYSCALL_UART_READLINE:
+    ; ( bufaddr buflen -- status )
+    ; status = 0 : no data was available
+    ; status = 1 : data available
+    ; status = 2 : empty input
+    ; status = 3 : Ctl-C received during input
+    .ALIAS R0,UART_STATUS_REG
+    .ALIAS R1,UART_DATA_REG
+    .ALIAS R2,BUFPTR
+    .ALIAS R3,BUFLEN
+    .ALIAS R4,BUFEND
+    .ALIAS R5,RECEIVED
+    .ALIAS R6,STATUS
+    .ALIAS R7,BUFIDX
+
+    PUSH R0,RS
+    PUSH R1,RS
+    PUSH R2,RS
+    PUSH R3,RS
+    PUSH R4,RS
+    PUSH R5,RS
+    PUSH R6,RS
+    PUSH R7,RS
+    PUSH RA,RS
+
+    POP BUFLEN,SP           ; Length of the buffer
+    POP BUFPTR,SP
+    MOV BUFIDX,BUFPTR
+    MOV BUFEND,BUFPTR
+    ADDI BUFEND,2            ; Points to the location containing the address of the end of the buffer
+    ADDI BUFPTR,4          ; Where the actual characters are in the buffer
+    ST  BUFPTR,BUFIDX
+    MOVI RECEIVED,0
+
+    LDI UART_STATUS_REG,#UART_STATUS_REG
+    LDI UART_DATA_REG,#UART_DATA_REG  
+
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+
+_SYSCALL_UART_READLINE_LOOP:
+    LD RA,UART_DATA_REG
+    CMPAI 0x03 ; Ctl-C?
+    JRI[Z] _SYSCALL_UART_READLINE_CTLC 
+
+    CMPAI 0x0a ; CR?
+    JRI[Z] _SYSCALL_UART_READLINE_READ 
+
+    PUSHR_B RA,BUFPTR
+    ADDI RECEIVED,1
+    SUBI BUFLEN,1
+    JRI[Z] _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_WAIT:
+    LD RA,UART_STATUS_REG
+    ANDAI #UART_STATUS_BIT_RX_DATA_AVAILABLE
+    JRI[Z] _SYSCALL_UART_READLINE_WAIT
+    JRI _SYSCALL_UART_READLINE_LOOP
+
+_SYSCALL_UART_READLINE_READ:
+    ; Did we actually read something?
+    CMPI RECEIVED,0
+    JRI[Z] _SYSCALL_UART_READLINE_NONE
+    ; Store the end of the received data to BUFPTR
+    ST BUFPTR,BUFEND
+    MOVI STATUS,1
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_NONE:
+    MOVI STATUS,0
+    JRI _SYSCALL_UART_READLINE_DONE
+
+_SYSCALL_UART_READLINE_CTLC:
+    MOVI STATUS,0x03
+
+_SYSCALL_UART_READLINE_DONE:
+    PUSH STATUS,SP
+    POP RA,RS
+    POP R7,RS
+    POP R6,RS
+    POP R5,RS
+    POP R4,RS
+    POP R3,RS
+    POP R2,RS
+    POP R1,RS
+    POP R0,RS
+    JP RL
+
 
 COLD:
     ; Test the number conversion routine
@@ -78,6 +167,15 @@ COLD:
   LDI RS,#RSTOP
 
   JRIL SYSCALL_UART_RX_BYTE
+
+  LDI R0,%LBUF_IDX
+  LDI R1,32
+  PUSH R0,SP
+  PUSH R1,SP
+
+  JRIL SYSCALL_UART_READLINE
+
+
   HALT
 
   ; Should return an error for an empty string

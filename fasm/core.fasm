@@ -97,6 +97,8 @@ SYSCALL_UART_TX_BYTE:
     .ALIAS R2,UART_DATA_REG
     .ALIAS R0,CHAR
 
+    PUSH R1,RS
+    PUSH R2,RS
     PUSH CHAR,RS
     MOV CHAR,RA
     LDI UART_STATUS_REG,#UART_STATUS_REG
@@ -109,6 +111,8 @@ _SYSCALL_UART_TX_BYTE_WAIT_READY:
 
     ST CHAR,UART_DATA_REG
     POP CHAR,RS
+    POP R2,RS
+    POP R1,RS
     JP RL
 
 SYSCALL_UART_RX_BYTE:
@@ -1441,9 +1445,9 @@ D_STORE_CA:
   POP R0,SP ; address
   POP R1,SP ; DH
   POP R2,SP ; DL 
-  ST R0,R2
+  ST R2,R0
   ADDI R0,2
-  ST R0,R1
+  ST R1,R0
   JPI NEXT
 
 ;
@@ -2253,7 +2257,7 @@ COPY_LOOP:
   CMPI SRCL,0
   JRI[Z] COPY_DONE
   LD DATA,SRCA
-  ST DEST,DATA
+  ST DATA,DEST
   ADDI SRCA,2
   ADDI DEST,2
   SUBI SRCL,1
@@ -3066,78 +3070,84 @@ TOKEN_CA:
   ; R2 - End of the buffer
   ; R3 - scratch
   ; 
+  .ALIAS RA,CHAR
+  .ALIAS RB,SEP
+  .ALIAS R0,PTR
+  .ALIAS R1,LEN
+  .ALIAS R2,BUFEND
+  .ALIAS R3,TMP
 
   ; Get the separator
-  POP RB,SP
+  POP SEP,SP
 
-  MOVI R1,0 ; Token length
-  MOVI R3,0
+  MOVI LEN,0 ; Token length
+  MOVI TMP,0
 
-  LDI R0,%LBUF_IDX
-  LD R0,R0
+  LDI PTR,%LBUF_IDX
+  LD  PTR,PTR
 
-  LDI R2,%LBUF_END
-  LD R2,R2
+  LDI BUFEND,%LBUF_END
+  LD  BUFEND,BUFEND
 
-  CMP R2,R0
+  CMP BUFEND,PTR
   ; at or past the end of the buffer already?
   JRI[Z] TOKEN_END
   JRI[C] TOKEN_END
 
   MOVAI 0x20   ; Put a space in A
-  CMP RB,RA     ; Is the separator a space?
+  CMP SEP,CHAR     ; Is the separator a space?
   JRI[NZ] TOKEN_TOK  ; No, so start seeking
 
 TOKEN_SKIP:         ; Skip leading spaces
-  CMP R2,R0         ; At the end of the buffer?
+  CMP BUFEND,PTR         ; At the end of the buffer?
   JRI[Z] TOKEN_DONE
-  LD_B RA,R0          ; Get the next char
-  CMP RA,RB           ; Is it the separator?
+  LD_B CHAR,PTR          ; Get the next char
+  CMP CHAR,SEP           ; Is it the separator?
   JRI[NZ] TOKEN_TOK
-  ADDI R0,1
+  ADDI PTR,1
   JRI TOKEN_SKIP  ;
 
 TOKEN_TOK:          ; Start searching for the end token here
-  CMP R2,R0
+  CMP BUFEND,PTR
   JRI[Z] TOKEN_DONE  ; Did we get to the end of the buffer?
-  LD_B RA,R0
-  CMP RA,RB
+  LD_B CHAR,PTR
+  CMP CHAR,SEP
   JRI[Z] TOKEN_DONE
   CMPAI 0x0A        ; Or is this a carriage return?
   JRI[Z] TOKEN_DONE
-  ADDI R0,1         ; idx++
-  ADDI R1,1         ; len++
+  ADDI PTR,1         ; idx++
+  ADDI LEN,1         ; len++
   JRI TOKEN_TOK
 
 TOKEN_DONE:
-  MOV R3,R1 ; Save for later
-  CMPI R1,0
+  MOV TMP,LEN ; Save for later
+  CMPI LEN,0
   JRI[Z] TOKEN_END
   ; Move the token to the end of the dictionary
   ; So ?SEARCH can access it
   LDI RA,%DICTIONARY_POINTER
   LD RB,RA    ; B Points to the dictionary
   ADDI RB,2  ; Bump the dictionary pointer
-  SUB R0,R1 ; Reset the buffer pointer
+  SUB PTR,LEN ; Reset the buffer pointer
 
 TOKEN_MOVE:
-  LD_B RA,R0
-  ST_B RB,RA
-  ADDI R0,1 ; Bump the buffer pointer
+  LD_B RA,PTR
+  ST_B RA,RB
+  ADDI PTR,1 ; Bump the buffer pointer
   ADDI RB,1 ; Bump the dictionary pointer
-  SUBI R1,1 ; Decrement the length
+  SUBI LEN,1 ; Decrement the length
   JRI[NZ] TOKEN_MOVE
   ;
   ; And we're done
   ; Save the current pointer
   LDI RA,%LBUF_IDX
   ADDI R0,1 ; Point past the terminator
-  ST RA,R0
+  ST R0,RA
 
 TOKEN_END:
   LDI RA,%DICTIONARY_POINTER
   LD RB,RA    ; B Points to the dictionary
-  ST RB,R3   ; Save the length
+  ST R3,RB   ; Save the length
   JPI NEXT
 
 TOKEN_LEN:
@@ -3261,12 +3271,12 @@ CASE_OF_CA:
   LDI *OF,STAR_OF_WA
   LDI DP,%DICTIONARY_POINTER
   LD *DP,DP
-  ST *DP,*OF ; Compile *OF
+  ST *OF,*DP ; Compile *OF
   ADDI *DP,2 ; point to location of jump word
   PUSH *DP,SP  ; save the location
   PUSH NUM,SP  ; Number of clauses
   ADDI *DP,2 ; next location for the definition
-  ST DP,*DP
+  ST *DP,DP
   JPI NEXT  
 
 
@@ -3285,15 +3295,15 @@ ENDOF_CA:
   LDI R0,%DICTIONARY_POINTER
   LD R1,R0
   ADDI R1,4
-  ST R2,R1   ; Save it in the jump location
+  ST R1,R2   ; Save it in the jump location
   LDI RA,STAR_OF_ENDOF_WA
   SUBI R1,4
-  ST R1,RA  ; Compile to the current definition
+  ST RA,R1  ; Compile to the current definition
   ADDI R1,2
   PUSH R1,SP
   PUSH R3,SP
   ADDI R1,2
-  ST R0,R1
+  ST R1,R0
   JPI NEXT
 
 ESAC:
@@ -3306,10 +3316,10 @@ ESAC_CA:
   LDI R1,%DICTIONARY_POINTER
   LD R1,R1
   LDI R2,STAR_ESAC_WA
-  ST R1,R2
+  ST R2,R1
   ADDI R1,2
   LDI R2,%DICTIONARY_POINTER
-  ST R2,R1
+  ST R1,R2
   SUBI R1,2
 
 ESAC_LOOP:
@@ -3317,7 +3327,7 @@ ESAC_LOOP:
   JRI[Z] ESAC_LOOP_DONE
   SUBI R0,1
   POP R2,SP
-  ST R2,R1
+  ST R1,R2
   JRI ESAC_LOOP
 
 ESAC_LOOP_DONE:
@@ -3371,11 +3381,11 @@ IF_CA:
   LDI R0,STAR_IF_WA
   LDI R1,%DICTIONARY_POINTER
   LD R2,R1
-  ST R2,R0 ; Compile *IF
+  ST R0,R2 ; Compile *IF
   ADDI R2,2 ; point to location of jump word
   PUSH R2,SP  ; save the location
   ADDI R2,2 ; next location for the definition
-  ST R1,R2
+  ST R2,R1
   JPI NEXT
 
 ELSE:
@@ -3392,14 +3402,14 @@ ELSE_CA:
   LDI R0,%DICTIONARY_POINTER
   LD R1,R0
   ADDI R1,4
-  ST R2,R1   ; Save it in the jump location
+  ST R1,R2   ; Save it in the jump location
   LDI RA,STAR_ELSE_WA
   SUBI R1,4
-  ST R1,RA  ; Compile *ELSE to the current definition
+  ST RA,R1  ; Compile *ELSE to the current definition
   ADDI R1,2
   PUSH R1,SP
   ADDI R1,2
-  ST R0,R1
+  ST R1,R0
   JPI NEXT
 
 THEN:
@@ -3632,7 +3642,7 @@ DONE_CA:
   ADDI R0,4
   LD R1,R0
   SUBI R0,2
-  ST R0,R1
+  ST R1,R0
   JPI NEXT
 
 SP:
@@ -4374,13 +4384,13 @@ EXPAND_CA:
   LD R1,R0
   LD R1,R1
   LDI R2,CORE_PATCH_VOCABULARY
-  ST R2,R1
+  ST R1,R2
   LDI R2,CORE_PATCH_FENCE
-  ST R2,R1
+  ST R1,R2
   LDI R0,CORE_PATCH_DP
   LDI R1,%DICTIONARY_POINTER
   LD R1,R1
-  ST R0,R1
+  ST R1,R0
   JPI NEXT
 
 VAR_FENCE:
@@ -4403,7 +4413,7 @@ FENCE_CA:
   LD R0,R0 ; CURRENT @ @
   LD R0,R0
   LDI R1,%FENCE
-  ST R1,R0
+  ST R0,R1
   JPI NEXT
 
 DICTIONARY_END:

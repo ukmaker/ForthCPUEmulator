@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include "runtime/ForthCPU/ForthVM.h"
 #include "runtime/ForthCPU/UnsafeMemory.h"
 #include "runtime/ForthCPU/FSerial.h"
@@ -188,6 +189,10 @@ void generateMemFile() {
   }
 }
 
+void signalHandler(int signum) {
+  debugger.setBreak();
+}
+
 void prompt() {
   if(mode == MODE_ATMEGA) 
   { 
@@ -242,6 +247,16 @@ int main(int argc, char **argv)
   labelTests.run();
   slurpTests.run();
   ldsTests.run();
+/**
+  struct sigaction handler;
+  handler.sa_handler = signalHandler;
+  sigemptyset(&handler.sa_mask);
+  handler.sa_flags = 0;
+  sigaction(SIGINT, &handler, NULL);
+**/
+
+//signal(SIGABRT, &signalHandler);
+//signal(SIGINT, &signalHandler);
 
   debugger.setAssembler(&fasm);
   debugger.setVM(&vm);
@@ -254,7 +269,8 @@ int main(int argc, char **argv)
   // debugger.writeProtect("DICTIONARY_END");
   //debugger.run();
   prompt();
-  while(commandLine()) ;
+ 
+      while(commandLine()) ;
   
 
   return 0;
