@@ -172,15 +172,21 @@ void generateCPP() {
 void generateMemFile() {
   if(loaded) 
   {
-    uint16_t romsize = 8192; //vm.read(10);
+    uint16_t romsize = 10000; //vm.read(10);
+    uint16_t ramstart;
+    uint16_t patch;
 
-    //Symbol *sym = fasm.getSymbol("#RAMSTART");
-    //vm.ram()->put(10, sym->token->value);
+    Symbol *sym = fasm.getSymbol("#RAMSTART");
+    ramstart = sym->token->value;
+    sym = fasm.getSymbol("CORE_PATCH_DP");
+    patch = sym->token->address;
+
+    vm.ram()->put(patch, ramstart);
 
     dumper.writeMEM("ForthImage.mem", &fasm, &mem, 0, romsize, true);
-
-    //sym = fasm.getSymbol("DICTIONARY_END");
-    //vm.ram()->put(10, sym->token->address);
+    // restore the current DP
+    sym = fasm.getSymbol("DICTIONARY_END");
+    vm.ram()->put(patch, sym->token->address);
 
   }
   else
@@ -268,6 +274,7 @@ int main(int argc, char **argv)
   // debugger.setBump(10);
   // debugger.writeProtect("DICTIONARY_END");
   //debugger.run();
+
   prompt();
  
       while(commandLine()) ;
